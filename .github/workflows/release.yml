@@ -15,11 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install Rust (for PyOxidizer)
         uses: actions-rs/toolchain@v1
         with:
@@ -30,7 +25,7 @@ jobs:
         run: pip install pyoxidizer
 
       - name: Build with PyOxidizer
-        run: python build.py
+        run: pyoxidizer build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
