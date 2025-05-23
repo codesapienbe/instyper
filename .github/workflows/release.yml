@@ -20,20 +20,23 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install uv
-        run: pip install uv
+      - name: Install Rust (for PyOxidizer)
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
-      - name: Install dependencies
-        run: uv pip install -r requirements.txt
+      - name: Install PyOxidizer
+        run: pip install pyoxidizer
 
-      - name: Build application
-        run: uv run python build.py
+      - name: Build with PyOxidizer
+        run: python build.py
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: instyper-${{ matrix.os }}
-          path: dist/*
+          path: build/instyper/
 
   release:
     needs: build
