@@ -1,6 +1,34 @@
 # 🚀 Instyper: Instant Voice Typer
 
-Instyper lets you type with your voice in many languages, even when you're offline! It's powered by Vosk, a super-smart speech recognition engine. Just install, talk, and watch your words appear like magic! ✨
+Instyper is a cross-platform voice typing and automation tool.
+
+## Installation (Recommended)
+
+1. Make sure you have Python 3.13+ and [uv](https://github.com/astral-sh/uv) installed:
+   ```sh
+   pip install uv
+   ```
+2. Install Instyper directly from the latest GitHub release zip:
+   ```sh
+   uv pip install https://github.com/<youruser>/<yourrepo>/archive/refs/tags/vX.Y.Z.zip
+   ```
+   *(Replace `<youruser>`, `<yourrepo>`, and `vX.Y.Z` with the correct values for your repo and release)*
+
+3. After install, you can run Instyper from any console:
+   ```sh
+   instyper
+   ```
+
+- User-specific configuration and models are always stored in `~/.instyper`.
+- To update Instyper, just re-run the install command with the new release zip.
+- To uninstall, run `uv pip uninstall instyper`.
+
+## Development
+- All dependencies are managed in `pyproject.toml`.
+- No binary builds or PyInstaller are used.
+
+## License
+[MIT](LICENSE)
 
 ---
 
