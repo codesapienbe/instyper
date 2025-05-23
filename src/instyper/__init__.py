@@ -266,6 +266,78 @@ class VoiceTyper:
             self.recognition_thread.join(timeout=2)
         print("Instant Typer stopped.")
 
+class TutorialManager:
+    def __init__(self, root, tray_icon):
+        self.root = root
+        self.tray_icon = tray_icon
+        self.steps = [
+            self.show_tray_icon_step,
+            self.show_toggle_step,
+            self.show_language_step,
+            self.show_microphone_step,
+            self.show_done_step
+        ]
+        self.current_step = 0
+        self.toplevel = None
+        # Mark tutorial as complete as soon as it starts
+        flag_path = os.path.expanduser('~/.instyper/.first_run_complete')
+        if not os.path.isfile(flag_path):
+            with open(flag_path, 'w') as f:
+                f.write('done')
+
+    def start(self):
+        self.show_step(0)
+
+    def show_step(self, idx):
+        self.current_step = idx
+        if self.toplevel:
+            self.toplevel.destroy()
+        if idx < len(self.steps):
+            self.steps[idx]()
+
+    def next_step(self):
+        self.show_step(self.current_step + 1)
+
+    def show_popup(self, title, message, x=200, y=200):
+        self.toplevel = tk.Toplevel(self.root)
+        self.toplevel.title(title)
+        self.toplevel.geometry(f"350x120+{x}+{y}")
+        self.toplevel.attributes('-topmost', True)
+        self.toplevel.grab_set()
+        label = tk.Label(self.toplevel, text=message, wraplength=320, justify='left', font=('Arial', 12))
+        label.pack(pady=10, padx=10)
+        btn = tk.Button(self.toplevel, text="Next", command=self.next_step)
+        btn.pack(pady=8)
+
+    def show_tray_icon_step(self):
+        self.show_popup(
+            "Welcome to Instyper!",
+            "This is your system tray icon. Right-click it to access the main features of Instyper."
+        )
+
+    def show_toggle_step(self):
+        self.show_popup(
+            "Toggle Voice Typing",
+            "Click 'Toggle Voice Typing' in the tray menu to start or stop voice typing."
+        )
+
+    def show_language_step(self):
+        self.show_popup(
+            "Language Selection",
+            "You can change the recognition language from the 'Language' submenu in the tray icon."
+        )
+
+    def show_microphone_step(self):
+        self.show_popup(
+            "Microphone Selection",
+            "Choose your preferred microphone from the 'Microphone' submenu in the tray icon."
+        )
+
+    def show_done_step(self):
+        self.show_popup(
+            "You're Ready!",
+            "That's it! You're ready to use Instyper. You can revisit this tutorial by deleting the '.first_run_complete' file in your ~/.instyper folder.")
+
 def main():
     print("Starting Instant Typer...")
     indicator = ListeningIndicator()
@@ -352,6 +424,12 @@ def main():
     voice_typer_thread.daemon = True
     voice_typer_thread.start()
     threads['voice_typer'] = voice_typer_thread
+
+    # First-run tutorial logic
+    flag_path = os.path.expanduser('~/.instyper/.first_run_complete')
+    if not os.path.isfile(flag_path):
+        tutorial = TutorialManager(indicator.root, icon)
+        indicator.root.after(1000, tutorial.start)
 
     indicator.root.mainloop()
 

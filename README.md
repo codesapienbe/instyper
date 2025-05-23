@@ -49,6 +49,31 @@ Just follow these steps for your computer:
 - All your stuff is in `~/.instyper` (including this README)
 - You can delete or update models in `~/.instyper/models` whenever you want
 
+### 🧪 Testing the Installer as an End-User
+
+When you want to test the installation just like a real end-user, here's what you need to know:
+
+### 📁 Default Install Locations
+- **Windows:** `C:\Program Files\instyper` (or a custom folder you choose during install)
+- **macOS:** `/Applications/instyper`
+- **Linux:** `/opt/instyper`
+
+### 🧑‍💻 How to Test
+1. **Close your development environment** and any running Instyper apps.
+2. **Run the installer** for your platform (see the Packaging section above).
+3. **Accept the default install path** (recommended for a real-world test), or choose a custom directory (e.g., `C:\Users\YourUser\instyper-test` on Windows) if you want to test alternate locations.
+4. **After installation:**
+   - Check that the app runs from the Start Menu, desktop shortcut, or `/Applications`/`/opt` as appropriate.
+   - Verify that the README and any other files are present in the install directory.
+   - Try uninstalling to make sure the uninstaller works and cleans up files.
+
+### 🚫 Where NOT to Test
+- Don't use your project root, build, or `dist` directories for end-user testing.
+- Always use a directory outside your development workspace to avoid conflicts.
+
+### 🧰 Advanced: Sandboxed/Virtual Testing
+- For extra safety, test in a virtual machine or a new user account to simulate a fresh user environment.
+
 ---
 
 ## 🧑‍💻 For Developers
