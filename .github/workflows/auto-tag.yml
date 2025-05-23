@@ -1,0 +1,44 @@
+name: Auto Tag Minor Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed to fetch all tags
+
+      - name: Set up Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Get latest tag
+        id: get_tag
+        run: |
+          latest_tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          if [ -z "$latest_tag" ]; then
+            latest_tag="v0.0.0"
+          fi
+          echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
+
+      - name: Calculate next minor version
+        id: bump
+        run: |
+          tag_no_v="${{ steps.get_tag.outputs.latest_tag }}"
+          tag_no_v="${tag_no_v#v}"
+          IFS='.' read -r major minor patch <<<"$tag_no_v"
+          new_minor=$((minor + 1))
+          new_tag="v${major}.${new_minor}.0"
+          echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
+
+      - name: Create and push new tag
+        run: |
+          git tag ${{ steps.bump.outputs.new_tag }}
+          git push origin ${{ steps.bump.outputs.new_tag }} 
