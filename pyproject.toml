@@ -1,0 +1,36 @@
+[project]
+name = "instyper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Yilmaz Mustafa", email = "ymus@tuta.io" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "plyer>=2.1.0",
+    "pyaudio>=0.2.14",
+    "pyautogui>=0.9.54",
+    "pynput>=1.8.1",
+    "speechrecognition>=3.14.3",
+    "pystray>=0.19.5",
+    "Pillow>=10.2.0", 
+    "pyttsx3",
+    "vosk",
+    "pyperclip",
+    "pywin32; platform_system == 'Windows'",
+    "requests",
+    "beautifulsoup4"
+]
+
+[project.scripts]
+instyper = "instyper:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.13.0",
+]
