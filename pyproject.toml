@@ -20,7 +20,9 @@ dependencies = [
     "pyperclip",
     "pywin32; platform_system == 'Windows'",
     "requests",
-    "beautifulsoup4"
+    "beautifulsoup4",
+    "streamlit>=1.35.0",
+    "sphinx>=7.2.6"
 ]
 
 [project.scripts]

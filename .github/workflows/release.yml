@@ -1,0 +1,52 @@
+name: Build and Release Instyper
+
+on:
+  push:
+    tags:
+      - 'v*'  # Only run on version tags
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    name: Build on ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies
+        run: uv pip install -r requirements.txt
+
+      - name: Build application
+        run: uv run python build.py
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: instyper-${{ matrix.os }}
+          path: dist/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
