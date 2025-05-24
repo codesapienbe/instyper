@@ -19,6 +19,8 @@ build_linux() {
     --collect-all numpy \
     --collect-all pandas \
     --collect-all beautifulsoup4 \
+    --add-data "ml/vosk-model-small-en-us-0.15;ml/vosk-model-small-en-us-0.15" \
+    --add-data "ml/vosk-model-small-tr-0.3;ml/vosk-model-small-tr-0.3" \
     --log-level=INFO
   status "Linux binary built: dist/instyper"
 }
@@ -31,6 +33,8 @@ build_windows() {
     --collect-all numpy \
     --collect-all pandas \
     --collect-all beautifulsoup4 \
+    --add-data "ml/vosk-model-small-en-us-0.15;ml/vosk-model-small-en-us-0.15" \
+    --add-data "ml/vosk-model-small-tr-0.3;ml/vosk-model-small-tr-0.3" \
     --log-level=INFO
   status "Windows binary built: dist/instyper.exe"
 }
@@ -43,6 +47,8 @@ build_macos() {
     --collect-all numpy \
     --collect-all pandas \
     --collect-all beautifulsoup4 \
+    --add-data "ml/vosk-model-small-en-us-0.15;ml/vosk-model-small-en-us-0.15" \
+    --add-data "ml/vosk-model-small-tr-0.3;ml/vosk-model-small-tr-0.3" \
     --log-level=INFO
   status "macOS binary built: dist/instyper"
 }
