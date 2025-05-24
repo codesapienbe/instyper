@@ -1,27 +1,6 @@
 # 🚀 Instyper: Instant Voice Typer
 
-Instyper is a cross-platform voice typing and automation tool.
-
-## Installation (Recommended)
-
-1. Make sure you have Python 3.13+ and [uv](https://github.com/astral-sh/uv) installed:
-   ```sh
-   pip install uv
-   ```
-2. Install Instyper directly from the latest GitHub release zip:
-   ```sh
-   uv pip install https://github.com/<youruser>/<yourrepo>/archive/refs/tags/vX.Y.Z.zip
-   ```
-   *(Replace `<youruser>`, `<yourrepo>`, and `vX.Y.Z` with the correct values for your repo and release)*
-
-3. After install, you can run Instyper from any console:
-   ```sh
-   instyper
-   ```
-
-- User-specific configuration and models are always stored in `~/.instyper`.
-- To update Instyper, just re-run the install command with the new release zip.
-- To uninstall, run `uv pip uninstall instyper`.
+Instyper is a cross-platform voice typing taskbar application.
 
 ## Development
 - All dependencies are managed in `pyproject.toml`.
@@ -47,8 +26,8 @@ Instyper is a cross-platform voice typing and automation tool.
 ### 🖥️ Get Started in 3 Steps
 1. **Download** the right version for your computer:
    - Windows: [instyper-win.exe](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-win.exe) (Just double-click!)
-   - macOS: [instyper-macos](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-macos)
-   - Linux: [instyper-linux](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-linux)
+   - macOS: [instyper-macos](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-macos) (Not available yet)
+   - Linux: [instyper-linux](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-linux) (Not available yet)
 
 2. **First Run Magic** ✨  
    Instyper automatically:
