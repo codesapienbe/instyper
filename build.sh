@@ -14,23 +14,25 @@ status "Detected OS: $OS"
 # Build for Linux (native)
 build_linux() {
   status "Building Linux binary (native) ..."
-  pyoxidizer build
-  status "Linux binary built: build/$(pyoxidizer list-target-triples | grep linux | head -n1)/release/install/instyper"
+  pyinstaller --onefile src/instyper/__main__.py --name instyper \
+    --collect-all numpy --collect-all pandas --log-level=DEBUG
+  status "Linux binary built: dist/instyper"
 }
 
 # Build for Windows (cross)
 build_windows() {
   status "Building Windows binary (cross) ..."
-  rustup target add x86_64-pc-windows-gnu || true
-  pyoxidizer build --target x86_64-pc-windows-gnu
-  status "Windows binary built: build/x86_64-pc-windows-gnu/release/install/instyper.exe"
+  pyinstaller --onefile src/instyper/__main__.py --name instyper.exe \
+    --collect-all numpy --collect-all pandas --log-level=DEBUG
+  status "Windows binary built: dist/instyper.exe"
 }
 
 # Build for macOS (native)
 build_macos() {
   status "Building macOS binary (native) ..."
-  pyoxidizer build
-  status "macOS binary built: build/$(pyoxidizer list-target-triples | grep darwin | head -n1)/release/install/instyper"
+  pyinstaller --onefile src/instyper/__main__.py --name instyper \
+    --collect-all numpy --collect-all pandas --log-level=DEBUG
+  status "macOS binary built: dist/instyper"
 }
 
 if [[ "$OS" == "Darwin" ]]; then
@@ -48,4 +50,4 @@ else
   exit 1
 fi
 
-status "All requested builds complete. Check the build/ directory for outputs." 
+status "All requested builds complete. Check the dist/ directory for outputs." 
