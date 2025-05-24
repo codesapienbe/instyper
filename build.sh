@@ -19,6 +19,13 @@ build_linux() {
     --collect-all numpy \
     --collect-all pandas \
     --collect-all beautifulsoup4 \
+    --collect-all pyautogui \
+    --collect-all plyer \
+    --collect-all pystray \
+    --collect-all PIL \
+    --collect-all pyttsx3 \
+    --collect-all pyaudio \
+    --collect-all pyperclip \
     --add-data "ml/vosk-model-small-en-us-0.15;ml/vosk-model-small-en-us-0.15" \
     --add-data "ml/vosk-model-small-tr-0.3;ml/vosk-model-small-tr-0.3" \
     --log-level=INFO
@@ -33,6 +40,13 @@ build_windows() {
     --collect-all numpy \
     --collect-all pandas \
     --collect-all beautifulsoup4 \
+    --collect-all pyautogui \
+    --collect-all plyer \
+    --collect-all pystray \
+    --collect-all PIL \
+    --collect-all pyttsx3 \
+    --collect-all pyaudio \
+    --collect-all pyperclip \
     --add-data "ml/vosk-model-small-en-us-0.15;ml/vosk-model-small-en-us-0.15" \
     --add-data "ml/vosk-model-small-tr-0.3;ml/vosk-model-small-tr-0.3" \
     --log-level=INFO
@@ -47,6 +61,13 @@ build_macos() {
     --collect-all numpy \
     --collect-all pandas \
     --collect-all beautifulsoup4 \
+    --collect-all pyautogui \
+    --collect-all plyer \
+    --collect-all pystray \
+    --collect-all PIL \
+    --collect-all pyttsx3 \
+    --collect-all pyaudio \
+    --collect-all pyperclip \
     --add-data "ml/vosk-model-small-en-us-0.15;ml/vosk-model-small-en-us-0.15" \
     --add-data "ml/vosk-model-small-tr-0.3;ml/vosk-model-small-tr-0.3" \
     --log-level=INFO
