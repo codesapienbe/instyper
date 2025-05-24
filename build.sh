@@ -14,24 +14,36 @@ status "Detected OS: $OS"
 # Build for Linux (native)
 build_linux() {
   status "Building Linux binary (native) ..."
-  pyinstaller --onefile src/instyper/__main__.py --name instyper \
-    --collect-all numpy --collect-all pandas --log-level=DEBUG
+  pyinstaller --onefile --windowed install.py --name instyper \
+    --collect-all vosk \
+    --collect-all numpy \
+    --collect-all pandas \
+    --collect-all beautifulsoup4 \
+    --log-level=INFO
   status "Linux binary built: dist/instyper"
 }
 
 # Build for Windows (cross)
 build_windows() {
   status "Building Windows binary (cross) ..."
-  pyinstaller --onefile src/instyper/__main__.py --name instyper.exe \
-    --collect-all numpy --collect-all pandas --log-level=DEBUG
+  pyinstaller --onefile --windowed install.py --name instyper.exe \
+    --collect-all vosk \
+    --collect-all numpy \
+    --collect-all pandas \
+    --collect-all beautifulsoup4 \
+    --log-level=INFO
   status "Windows binary built: dist/instyper.exe"
 }
 
 # Build for macOS (native)
 build_macos() {
   status "Building macOS binary (native) ..."
-  pyinstaller --onefile src/instyper/__main__.py --name instyper \
-    --collect-all numpy --collect-all pandas --log-level=DEBUG
+  pyinstaller --onefile --windowed install.py --name instyper \
+    --collect-all vosk \
+    --collect-all numpy \
+    --collect-all pandas \
+    --collect-all beautifulsoup4 \
+    --log-level=INFO
   status "macOS binary built: dist/instyper"
 }
 
