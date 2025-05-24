@@ -42,89 +42,35 @@ Instyper is a cross-platform voice typing and automation tool.
 
 ---
 
-## 👩‍💻 For End-Users
+## 👩‍💻 For Everyone Using Instyper
 
-### 🖥️ How to Install
+### 🖥️ Get Started in 3 Steps
+1. **Download** the right version for your computer:
+   - Windows: [instyper-win.exe](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-win.exe) (Just double-click!)
+   - macOS: [instyper-macos](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-macos)
+   - Linux: [instyper-linux](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-linux)
 
-Just follow these steps for your computer:
+2. **First Run Magic** ✨  
+   Instyper automatically:
+   - Creates a personal configuration folder in your home directory (`~/.instyper`)
+   - Sets up basic English voice typing
+   - Remembers your preferences between sessions
 
-#### 🪟 Windows
-1. Download `instyper-windows.exe` from the `dist` folder
-2. Put it anywhere you want and double-click to start!
+3. **Add Languages** (Optional)  
+   Want to type in French, Dutch, or other languages?
+   1. Get models from [Vosk Models](https://alphacephei.com/vosk/models)
+   2. Unzip into `~/instyper/models` (we'll create this automatically)
+   3. Restart Instyper - new languages appear like magic!
 
-#### 🍏 macOS
-1. Download `instyper-darwin` from the `dist` folder
-2. Open Terminal and run:
-   ```bash
-   chmod +x instyper-darwin
-   ./instyper-darwin
-   ```
+### ⚙️ Where Everything Lives  
+All your personal settings and languages are kept in:  
+`~/instyper/`  
+- 🔒 Safe from app updates
+- 🗑️ Delete anytime to start fresh
+- 🔄 Add/remove models while Instyper is closed
 
-#### 🐧 Linux
-1. Download `instyper-linux` from the `dist` folder
-2. Open Terminal and run:
-   ```bash
-   chmod +x instyper-linux
-   ./instyper-linux
-   ```
-
-### 🌐 How to Add or Update Languages
-- Download new Vosk models from [Vosk Models](https://alphacephei.com/vosk/models)
-- Unzip the model folder into `~/.instyper/models`
-- Restart Instyper — your new language will show up in the menu!
-
-### 🗃️ Where is Everything?
-- All your stuff is in `~/.instyper` (including this README)
-- You can delete or update models in `~/.instyper/models` whenever you want
-
-### 🧪 Testing the Installer as an End-User
-
-When you want to test the installation just like a real end-user, here's what you need to know:
-
-### 📁 Default Install Locations
-- **Windows:** `C:\Program Files\instyper` (or a custom folder you choose during install)
-- **macOS:** `/Applications/instyper`
-- **Linux:** `/opt/instyper`
-
-### 🧑‍💻 How to Test
-1. **Close your development environment** and any running Instyper apps.
-2. **Run the installer** for your platform (see the Packaging section above).
-3. **Accept the default install path** (recommended for a real-world test), or choose a custom directory (e.g., `C:\Users\YourUser\instyper-test` on Windows) if you want to test alternate locations.
-4. **After installation:**
-   - Check that the app runs from the Start Menu, desktop shortcut, or `/Applications`/`/opt` as appropriate.
-   - Verify that the README and any other files are present in the install directory.
-   - Try uninstalling to make sure the uninstaller works and cleans up files.
-
-### 🚫 Where NOT to Test
-- Don't use your project root, build, or `dist` directories for end-user testing.
-- Always use a directory outside your development workspace to avoid conflicts.
-
-### 🧰 Advanced: Sandboxed/Virtual Testing
-- For extra safety, test in a virtual machine or a new user account to simulate a fresh user environment.
-
----
-
-## 🧑‍💻 For Developers
-
-### 🏃‍♂️ Running from Source
-1. Clone the repo
-2. Install the requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Run Instyper:
-   ```bash
-   python src/instyper/__init__.py
-   ```
-
-### 🛠️ Managing Models
-- Put new models in `~/.instyper/models`
-- On first run, if `~/.instyper/models` is empty, models from the repo's `models/` folder are copied there
-- The app **always** loads models from `~/.instyper/models`
-
-### 📦 Packaging
-- Models are **not** bundled in the binary (keeps things small and fast!)
-- End-users manage their own models in `~/.instyper/models`
+### 🚀 Need Help?  
+Visit our [Releases Page](https://github.com/codesapienbe/instyper/releases) for the latest version and troubleshooting tips!
 
 ---
 
