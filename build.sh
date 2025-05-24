@@ -56,13 +56,10 @@ build_macos() {
 if [[ "$OS" == "Darwin" ]]; then
   build_macos
   build_linux
-  build_windows
 elif [[ "$OS" == "Linux" ]]; then
   build_linux
-  build_windows
 elif [[ "$OS" =~ MINGW|MSYS|CYGWIN|NT* ]]; then
   build_windows
-  build_linux
 else
   status "Unsupported OS: $OS"
   exit 1
