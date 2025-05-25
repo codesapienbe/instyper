@@ -492,6 +492,33 @@ class VoiceTyper:
         else:
             self.model = None
 
+    def set_whisper_model(self, model_name):
+        config = load_config()
+        models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+        os.makedirs(models_dir, exist_ok=True)
+        files = os.listdir(models_dir) if os.path.isdir(models_dir) else []
+        model_present = os.path.isdir(os.path.join(models_dir, model_name)) or any(f.startswith(model_name) for f in files)
+        if not model_present:
+            show_notification('Instant Typer', f'Downloading Whisper model {model_name}...')
+            def after_download():
+                self.set_whisper_model(model_name)
+            WhisperModelDownloader(model_name, models_dir, after_download).download()
+            show_notification('Instant Typer', f'Downloading and extracting Whisper model {model_name}...')
+            self.model = None
+            return
+        # Model is present, update config and load
+        config['whisper_model'] = model_name
+        save_config(config)
+        try:
+            import whisper
+            self.model = whisper.load_model(model_name, download_root=models_dir)
+            show_notification('Instant Typer', f'Whisper model loaded: {model_name}')
+        except Exception as e:
+            show_notification('Instant Typer', f'Error loading Whisper model: {e}')
+        log(f"Switched to Whisper model: {model_name}")
+        self.tts_engine.say(f"Whisper model changed")
+        self.tts_engine.runAndWait()
+
     def set_language(self, lang_code):
         config = load_config()
         custom_model = config.get('custom_vosk_model')
@@ -547,22 +574,11 @@ class VoiceTyper:
             self.tts_engine.say(f"Language changed")
             self.tts_engine.runAndWait()
             return
-        # Whisper: check and download model if missing
+        # Whisper: switch model if backend is whisper
         if self.selected_backend == 'whisper':
             whisper_model = config.get('whisper_model', 'tiny')
-            models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
-            files = os.listdir(models_dir) if os.path.isdir(models_dir) else []
-            model_present = os.path.isdir(os.path.join(models_dir, whisper_model)) or any(f.startswith(whisper_model) for f in files)
-            if not model_present:
-                show_notification('Instant Typer', f'Downloading Whisper model {whisper_model}...')
-                try:
-                    WhisperModelDownloader(whisper_model, models_dir, lambda: self.set_language(lang_code)).download()
-                    show_notification('Instant Typer', f'Downloading and extracting Whisper model {whisper_model}...')
-                except Exception as e:
-                    show_notification('Instant Typer', f'Error downloading Whisper model {whisper_model}: {e}')
-                self.model = None
-                return
-            # Model is present, nothing else to do for Whisper here
+            self.set_whisper_model(whisper_model)
+            return
         # Add logic for other backends if needed
 
     def get_model_path(self, lang_code):
