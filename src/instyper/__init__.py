@@ -28,6 +28,7 @@ import numpy as np
 import tkinter.messagebox
 import logging
 import abc
+import string
 
 # Setup logging to file and console
 LOG_PATH = os.path.expanduser('~/.instyper/instyper.log')
@@ -757,7 +758,29 @@ class VoiceTyper:
                         log("Transcribing with Whisper...")
                         result = model.transcribe(wav_path, language=self.selected_lang.lower())
                         text = result.get('text', '').strip()
-                        if text and not self.stop_event.is_set():
+                        # Filter out hallucinated or useless outputs
+                        IGNORE_WHISPER_OUTPUTS = {
+                            "thank you.",
+                            "i'm sorry, i cannot help with that.",
+                            "i'm sorry.",
+                            "sorry.",
+                            "hello.",
+                            "hi.",
+                            "yes.",
+                            "no.",
+                            "okay.",
+                            "ok.",
+                        }
+                        def is_useless_whisper_output(t):
+                            t_low = t.lower().strip()
+                            if not t_low or all(c in string.punctuation for c in t_low):
+                                return True
+                            if len(t_low) < 3:
+                                return True
+                            if t_low in IGNORE_WHISPER_OUTPUTS:
+                                return True
+                            return False
+                        if text and not is_useless_whisper_output(text) and not self.stop_event.is_set():
                             log(f"Typing: {text}")
                             if self.indicator:
                                 self.indicator.label.config(text='Typing...')
