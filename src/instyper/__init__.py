@@ -1119,6 +1119,28 @@ def main():
     voice_typer = VoiceTyper(indicator=indicator)
     atexit.register(voice_typer.cleanup)
 
+    # Always ensure default models are present before starting main UI
+    # Vosk default
+    vosk_default_model = MODEL_DEFAULTS.get('vosk', 'en')
+    vosk_model_dir = os.path.join(USER_MODELS_DIR, 'vosk', voice_typer.LANG_MODELS.get(vosk_default_model.upper(), 'vosk-model-small-en-us-0.15'))
+    if not os.path.isdir(vosk_model_dir):
+        try:
+            download_vosk_english_small()
+        except Exception as e:
+            log(f"Error downloading Vosk English model: {e}", 'error')
+    # Whisper default
+    whisper_default_model = MODEL_DEFAULTS.get('whisper', 'tiny')
+    whisper_models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+    whisper_model_present = False
+    if os.path.isdir(whisper_models_dir):
+        files = os.listdir(whisper_models_dir)
+        whisper_model_present = any(f.startswith(whisper_default_model) for f in files)
+    if not whisper_model_present:
+        try:
+            download_whisper_tiny()
+        except Exception as e:
+            log(f"Error downloading Whisper tiny model: {e}", 'error')
+
     def get_active_backend_and_model():
         backend = voice_typer.selected_backend
         if backend == 'vosk':
@@ -1396,10 +1418,36 @@ def main():
         else:
             indicator.root.after(0, indicator.hide)
 
+    def restart_app():
+        nonlocal indicator, voice_typer
+        if not tkinter.messagebox.askyesno("Confirm", "Are you sure you want to restart the app? This will stop all running tasks and reset the app state."):
+            return
+        log("Soft restarting app...")
+        # Stop voice typing and threads
+        voice_typer.cleanup()
+        # Destroy indicator window
+        try:
+            indicator.destroy()
+        except Exception:
+            pass
+        # Re-initialize indicator and voice_typer
+        new_indicator = ListeningIndicator()
+        new_voice_typer = VoiceTyper(indicator=new_indicator)
+        atexit.register(new_voice_typer.cleanup)
+        # Replace references
+        indicator = new_indicator
+        voice_typer = new_voice_typer
+        # Rebuild menu and icon
+        icon.icon = create_icon()
+        update_icon_title(icon)
+        icon.menu = build_menu()
+        show_notification('Instant Typer', 'App state has been reset.')
+
     def make_system_menu():
         return pystray.Menu(
             pystray.MenuItem('Purge All Models', lambda icon, item: purge_all_models()),
             pystray.MenuItem('Reset User Settings', lambda icon, item: reset_user_settings()),
+            pystray.MenuItem('Restart App', lambda icon, item: restart_app()),
         )
 
     def build_menu():
@@ -1457,15 +1505,6 @@ def main():
     if not os.path.isfile(flag_path):
         tutorial = TutorialManager(indicator.root, icon)
         indicator.root.after(1000, tutorial.start)
-        # Download only English small model for Vosk and tiny for Whisper
-        try:
-            download_vosk_english_small()
-        except Exception as e:
-            log(f"Error downloading Vosk English model: {e}", 'error')
-        try:
-            download_whisper_tiny()
-        except Exception as e:
-            log(f"Error downloading Whisper tiny model: {e}", 'error')
 
     indicator.root.mainloop()
 
@@ -1570,6 +1609,11 @@ def download_vosk_english_small():
         log(f"Extracting {EN_MODEL_NAME} to {models_dir}")
         with zipfile.ZipFile(tmpf.name, 'r') as zip_ref:
             zip_ref.extractall(models_dir)
+        try:
+            os.remove(tmpf.name)
+            log(f"Removed archive: {tmpf.name}")
+        except Exception as e:
+            log(f"Could not remove archive {tmpf.name}: {e}", 'warning')
     log(f"Vosk English model {EN_MODEL_NAME} extracted.")
 
 def download_whisper_tiny():
@@ -1586,20 +1630,51 @@ def download_whisper_tiny():
     log("Whisper 'tiny' model downloaded.")
 
 def purge_all_models():
-    if not tkinter.messagebox.askyesno("Confirm", "Are you sure you want to delete ALL downloaded models? This cannot be undone."):
+    if not tkinter.messagebox.askyesno("Confirm", "Are you sure you want to delete ALL downloaded models except the currently selected one? This cannot be undone."):
         return
     import glob
-    models_root = USER_MODELS_DIR
-    for item in glob.glob(os.path.join(models_root, '*')):
-        try:
-            if os.path.isdir(item):
-                shutil.rmtree(item)
-            else:
-                os.remove(item)
-            log(f"Deleted: {item}")
-        except Exception as e:
-            log(f"Error deleting {item}: {e}", 'error')
-    show_notification('Instant Typer', 'All models purged.')
+    config = load_config()
+    kept = []
+    deleted = []
+    # Vosk
+    vosk_dir = os.path.join(USER_MODELS_DIR, 'vosk')
+    custom_vosk_model = config.get('custom_vosk_model')
+    lang = config.get('lang', 'EN')
+    selected_vosk_model = custom_vosk_model or (voice_typer.LANG_MODELS.get(lang) if hasattr(voice_typer, 'LANG_MODELS') else None)
+    if os.path.isdir(vosk_dir):
+        for item in glob.glob(os.path.join(vosk_dir, '*')):
+            if os.path.basename(item) == selected_vosk_model:
+                kept.append(item)
+                continue
+            try:
+                if os.path.isdir(item):
+                    shutil.rmtree(item)
+                else:
+                    os.remove(item)
+                deleted.append(item)
+                log(f"Deleted: {item}")
+            except Exception as e:
+                log(f"Error deleting {item}: {e}", 'error')
+    # Whisper
+    whisper_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+    selected_whisper_model = config.get('whisper_model', 'base')
+    if os.path.isdir(whisper_dir):
+        for item in glob.glob(os.path.join(whisper_dir, '*')):
+            if os.path.basename(item).startswith(selected_whisper_model):
+                kept.append(item)
+                continue
+            try:
+                if os.path.isdir(item):
+                    shutil.rmtree(item)
+                else:
+                    os.remove(item)
+                deleted.append(item)
+                log(f"Deleted: {item}")
+            except Exception as e:
+                log(f"Error deleting {item}: {e}", 'error')
+    # TODO: Add similar logic for other backends if needed
+    msg = 'All models purged except:\n' + '\n'.join(os.path.basename(k) for k in kept) if kept else 'All models purged.'
+    show_notification('Instant Typer', msg)
     # Optionally, refresh menu
 
 def reset_user_settings():
