@@ -24,9 +24,7 @@ import wave
 import pathlib
 import urllib.request
 import math
-import tensorflow as tf
 import numpy as np
-import soundfile as sf
 
 # Central models directory in user home
 USER_MODELS_DIR = os.path.expanduser('~/.instyper/models')
@@ -438,6 +436,12 @@ class VoiceTyper:
         self.MODELS_DIR = os.path.join(self.MODELS_ROOT, 'vosk')
         os.makedirs(self.MODELS_DIR, exist_ok=True)
         config = load_config()
+        # Backend selection
+        if platform.system() == 'Windows':
+            self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt']
+        else:
+            self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt', 'paddlepaddle']
+        self.selected_backend = config.get('backend', 'vosk')  # Default to vosk
         self.selected_lang = config.get('lang', 'EN')  # Default to English
         self.model_path = self.get_model_path(self.selected_lang)
         try:
@@ -445,9 +449,6 @@ class VoiceTyper:
             show_notification('Instant Typer', f'Model loaded: {self.model_path}')
         except Exception as e:
             show_notification('Instant Typer', f'Error loading model: {e}')
-        # Backend selection
-        self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt', 'paddlepaddle', 'espnet']
-        self.selected_backend = config.get('backend', 'vosk')  # Default to vosk
 
     def set_language(self, lang_code):
         if lang_code not in self.LANG_MODELS:
@@ -788,7 +789,7 @@ class VoiceTyper:
                 except Exception:
                     pass
                 p.terminate()
-        elif self.selected_backend == 'paddlepaddle':
+        elif self.selected_backend == 'paddlepaddle' and platform.system() != 'Windows':
             try:
                 from paddlespeech.cli.asr.infer import ASRExecutor
             except ImportError:
@@ -1137,7 +1138,7 @@ def vosk_multilang_recognize():
 def download_and_extract_small_vosk_models():
     """
     Downloads all Vosk models with 'small' in their URL from https://alphacephei.com/vosk/models,
-    extracts them to ~/.instyper/models, and skips extraction if the model directory already exists.
+    extracts them to ~/.instyper/models/vosk, and skips extraction if the model directory already exists.
     """
     MODELS_URL = "https://alphacephei.com/vosk/models"
     print(f"Fetching model list from {MODELS_URL} ...")
@@ -1147,12 +1148,14 @@ def download_and_extract_small_vosk_models():
     links = soup.find_all("a")
     model_links = [a["href"] for a in links if a.has_attr("href") and "small" in a["href"] and a["href"].endswith(".zip")]
     print(f"Found {len(model_links)} small models to process.")
-    os.makedirs(USER_MODELS_DIR, exist_ok=True)
+    USER_MODELS_DIR = os.path.expanduser('~/.instyper/models')
+    VOSK_MODELS_DIR = os.path.join(USER_MODELS_DIR, 'vosk')
+    os.makedirs(VOSK_MODELS_DIR, exist_ok=True)
     for link in model_links:
         model_url = link if link.startswith("http") else f"https://alphacephei.com/vosk/models/{link}"
         model_zip_name = os.path.basename(model_url)
         model_dir_name = model_zip_name[:-4] if model_zip_name.endswith('.zip') else model_zip_name
-        model_dir_path = os.path.join(USER_MODELS_DIR, model_dir_name)
+        model_dir_path = os.path.join(VOSK_MODELS_DIR, model_dir_name)
         if os.path.isdir(model_dir_path):
             print(f"Model directory already exists, skipping: {model_dir_name}")
             continue
@@ -1166,7 +1169,7 @@ def download_and_extract_small_vosk_models():
             tmpf.flush()
             print(f"Extracting {model_zip_name} to {model_dir_path} ...")
             with zipfile.ZipFile(tmpf.name, 'r') as zip_ref:
-                zip_ref.extractall(USER_MODELS_DIR)
+                zip_ref.extractall(VOSK_MODELS_DIR)
         print(f"Model {model_dir_name} extracted.")
     print("All small models processed.")
 

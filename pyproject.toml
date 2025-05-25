@@ -26,9 +26,7 @@ dependencies = [
     "speechbrain",              # SpeechBrain backend
     "huggingface_hub",          # Coqui STT, PaddlePaddle, TensorFlowASR model download
     "stt",                      # Coqui STT backend
-    "paddlespeech",             # PaddlePaddle backend
-    "tensorflow",               # TensorFlowASR backend
-    "soundfile",                # For audio file reading (TensorFlowASR)
+    "paddlespeech; platform_system != 'Windows'",             # PaddlePaddle backend (Linux/macOS only)
     "numpy",                    # For audio processing (TensorFlowASR, Coqui)
 ]
 

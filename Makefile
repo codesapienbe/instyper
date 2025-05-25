@@ -1,6 +1,12 @@
 # Makefile for full environment setup and building (Windows, Linux, macOS)
 
-.PHONY: help venv setup-all setup-windows setup-linux setup-macos setup-python setup-whisper build-all build-linux build-windows build-macos run
+.PHONY: help venv setup-all setup-windows setup-linux setup-macos setup-python setup-whisper build-all build-linux build-windows build-macos run clean-venv
+
+# Force PowerShell as the shell for all commands on Windows
+ifeq ($(OS),Windows_NT)
+SHELL := powershell.exe
+.SHELLFLAGS := -NoProfile -ExecutionPolicy Bypass -Command
+endif
 
 help:
 	@echo "make venv          # Create a Python 3.9 virtual environment using uv"
@@ -20,9 +26,21 @@ help:
 	@echo "  On Linux/macOS: source .venv/bin/activate"
 
 venv:
-	uv venv --python 3.9 .venv
+ifeq ($(OS),Windows_NT)
+	if (!(Test-Path '.venv/Scripts/Activate')) { Write-Host 'Creating venv...'; uv venv --python 3.10 .venv; & .venv/Scripts/python.exe -m ensurepip --upgrade; & .venv/Scripts/python.exe -m pip install --upgrade pip; & .venv/Scripts/python.exe -m pip install uv; } else { Write-Host '.venv already exists, skipping creation.'; }
+else
+	@if [ ! -d .venv ]; then \
+		echo "Creating venv..." ; \
+		uv venv --python 3.10 .venv ; \
+		.venv/bin/python -m ensurepip --upgrade ; \
+		.venv/bin/python -m pip install --upgrade pip ; \
+		.venv/bin/python -m pip install uv ; \
+	else \
+		echo ".venv already exists, skipping creation." ; \
+	fi
+endif
 
-setup-all: venv
+setup-all: clean-venv venv
 ifeq ($(OS),Windows_NT)
 	$(MAKE) setup-windows
 else
@@ -39,13 +57,7 @@ endif
 	$(MAKE) setup-whisper
 
 setup-windows:
-	@echo "Installing C++ Build Tools and ffmpeg with Chocolatey..."
-	@if [ ! -f /c/ProgramData/chocolatey/bin/choco.exe ]; then \
-		echo "Chocolatey not found. Installing Chocolatey..." ; \
-		powershell.exe -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))" ; \
-	fi
-	choco install -y visualcpp-build-tools
-	choco install -y ffmpeg
+	if (!(Test-Path 'C:/ProgramData/chocolatey/bin/choco.exe')) { Write-Host 'Chocolatey not found. Installing Chocolatey...'; try { iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); } catch { Write-Error 'Chocolatey installation failed.'; exit 1; } } else { Write-Host 'Chocolatey already installed.'; }; if (-not (choco list --local-only | Select-String 'visualcpp-build-tools')) { Write-Host 'Installing C++ Build Tools...'; choco install -y visualcpp-build-tools; } else { Write-Host 'C++ Build Tools already installed.'; }; if (-not (choco list --local-only | Select-String 'ffmpeg')) { Write-Host 'Installing ffmpeg...'; choco install -y ffmpeg; } else { Write-Host 'ffmpeg already installed.'; }
 
 setup-linux:
 	@echo "Installing build-essential and ffmpeg with apt..."
@@ -60,17 +72,15 @@ setup-macos:
 	brew install ffmpeg
 
 setup-python: venv
+	uv pip install --prerelease=allow -r pyproject.toml
 ifeq ($(OS),Windows_NT)
-	.venv\Scripts\uv pip install -r pyproject.toml
-else
-	.venv/bin/uv pip install -r pyproject.toml
+	if (Test-Path '.venv/Scripts/tensorflow_io_gcs_filesystem-*.dist-info') { .venv/Scripts/pip.exe uninstall -y tensorflow-io-gcs-filesystem }
 endif
 
 setup-whisper: venv
+	uv pip install --prerelease=allow --upgrade git+https://github.com/openai/whisper.git
 ifeq ($(OS),Windows_NT)
-	.venv\Scripts\uv pip install --upgrade git+https://github.com/openai/whisper.git
-else
-	.venv/bin/uv pip install --upgrade git+https://github.com/openai/whisper.git
+	if (Test-Path '.venv/Scripts/tensorflow_io_gcs_filesystem-*.dist-info') { .venv/Scripts/pip.exe uninstall -y tensorflow-io-gcs-filesystem }
 endif
 
 # Build targets
@@ -160,4 +170,15 @@ else
 	else
 		@echo "Unsupported OS: $(UNAME_S)" && exit 1
 	endif
+endif
+
+# Clean up venv: deactivate (if active) and remove .venv directory
+clean-venv:
+ifeq ($(OS),Windows_NT)
+	if (Test-Path '.venv') { Write-Host 'Removing .venv...'; Remove-Item -Recurse -Force .venv }
+else
+	@if [ -d .venv ]; then \
+		echo "Removing .venv..." ; \
+		rm -rf .venv ; \
+	fi
 endif 
