@@ -198,10 +198,12 @@ class ModelManagerDialog:
         self.listbox.bind('<<ListboxSelect>>', self.on_select)
         self.selected_model = None
         self.downloading = False
+        self.downloaded_models = set()
 
     def refresh_models(self):
         self.listbox.delete(0, tk.END)
         self.available_models = []
+        self.downloaded_models = set()
         if self.backend == 'vosk':
             try:
                 resp = requests.get(VOSK_MODEL_LIST_URL, timeout=10)
@@ -212,44 +214,49 @@ class ModelManagerDialog:
                     size = m.get('filesize', None)
                     size_str = human_size(size)
                     notes = m.get('notes', '')
+                    model_dir = os.path.join(self.models_dir, name)
+                    is_downloaded = os.path.isdir(model_dir)
                     display = f"{name} | {lang} | {size_str} | {notes}"
+                    if is_downloaded:
+                        display += " (downloaded)"
+                        self.downloaded_models.add(name)
                     self.listbox.insert(tk.END, display)
                     self.available_models.append(m)
             except Exception as e:
                 self.listbox.insert(tk.END, f"Error fetching model list: {e}")
         elif self.backend == 'whisper':
             for m in WHISPER_MODELS:
-                self.listbox.insert(tk.END, m)
+                model_dir = os.path.join(self.models_dir, m)
+                is_downloaded = os.path.isdir(model_dir) or any(f.startswith(m) for f in os.listdir(self.models_dir))
+                display = m
+                if is_downloaded:
+                    display += " (downloaded)"
+                    self.downloaded_models.add(m)
+                self.listbox.insert(tk.END, display)
                 self.available_models.append({'name': m})
-        elif self.backend == 'speechbrain':
-            for m in SPEECHBRAIN_MODELS:
-                display = f"{m['name']} | {m['lang']} | {m['desc']}"
-                self.listbox.insert(tk.END, display)
-                self.available_models.append(m)
-        elif self.backend == 'coqui-stt':
-            for m in COQUI_MODELS:
-                display = f"{m['name']} | {m['lang']} | {m['desc']}"
-                self.listbox.insert(tk.END, display)
-                self.available_models.append(m)
-        elif self.backend == 'paddlepaddle':
-            for m in PADDLESPEECH_MODELS:
-                display = f"{m['name']} | {m['lang']} | {m['desc']}"
-                self.listbox.insert(tk.END, display)
-                self.available_models.append(m)
-        else:
-            self.listbox.insert(tk.END, "Model download not implemented for this backend.")
         self.progress_var.set('')
         self.selected_model = None
 
     def on_select(self, event):
         idx = self.listbox.curselection()
         if idx:
-            self.selected_model = self.available_models[idx[0]]
+            model = self.available_models[idx[0]]
+            name = model.get('name', model) if isinstance(model, dict) else model
+            if name in self.downloaded_models:
+                self.selected_model = None
+                self.progress_var.set('Model already downloaded.')
+            else:
+                self.selected_model = model
         else:
             self.selected_model = None
 
     def download_model(self):
         if self.downloading or not self.selected_model:
+            return
+        # Prevent download if already downloaded
+        name = self.selected_model.get('name', self.selected_model) if isinstance(self.selected_model, dict) else self.selected_model
+        if name in self.downloaded_models:
+            self.progress_var.set('Model already downloaded.')
             return
         self.downloading = True
         self.progress_var.set('Starting download...')
@@ -296,7 +303,7 @@ class ModelManagerDialog:
                 spin_thread = threading.Thread(target=spin, daemon=True)
                 spin_thread.start()
                 try:
-                    whisper.load_model(model_name)
+                    whisper.load_model(model_name, download_root=self.models_dir)
                 finally:
                     done[0] = True
                 self.progress_var.set('Done!')
@@ -441,14 +448,28 @@ class VoiceTyper:
             self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt']
         else:
             self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt', 'paddlepaddle']
+        # Always default to 'vosk' if not specified
         self.selected_backend = config.get('backend', 'vosk')  # Default to vosk
         self.selected_lang = config.get('lang', 'EN')  # Default to English
+        if self.selected_backend == 'vosk' and self.selected_lang not in self.LANG_MODELS:
+            print(f"Language {self.selected_lang} not supported. Defaulting to EN.")
+            self.selected_lang = 'EN'
         self.model_path = self.get_model_path(self.selected_lang)
-        try:
-            self.model = Model(self.model_path)
-            show_notification('Instant Typer', f'Model loaded: {self.model_path}')
-        except Exception as e:
-            show_notification('Instant Typer', f'Error loading model: {e}')
+        if self.selected_backend == 'vosk' and self.model_path and os.path.isdir(self.model_path):
+            # Check for expected Vosk model files (e.g., conf, am, graph subdirs)
+            expected = all(os.path.isdir(os.path.join(self.model_path, d)) for d in ['conf', 'am', 'graph'])
+            if expected:
+                try:
+                    self.model = Model(self.model_path)
+                    show_notification('Instant Typer', f'Model loaded: {self.model_path}')
+                except Exception as e:
+                    show_notification('Instant Typer', f'Error loading model: {e}')
+            else:
+                print(f"Vosk model directory {self.model_path} does not contain expected model files.")
+                show_notification('Instant Typer', f'Vosk model directory {self.model_path} is invalid.')
+                self.model = None
+        else:
+            self.model = None
 
     def set_language(self, lang_code):
         if lang_code not in self.LANG_MODELS:
@@ -463,11 +484,21 @@ class VoiceTyper:
         self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
         os.makedirs(self.MODELS_DIR, exist_ok=True)
         self.model_path = self.get_model_path(self.selected_lang)
-        try:
-            self.model = Model(self.model_path)
-            show_notification('Instant Typer', f'Model loaded: {self.model_path}')
-        except Exception as e:
-            show_notification('Instant Typer', f'Error loading model: {e}')
+        if self.selected_backend == 'vosk' and self.model_path and os.path.isdir(self.model_path):
+            # Check for expected Vosk model files (e.g., conf, am, graph subdirs)
+            expected = all(os.path.isdir(os.path.join(self.model_path, d)) for d in ['conf', 'am', 'graph'])
+            if expected:
+                try:
+                    self.model = Model(self.model_path)
+                    show_notification('Instant Typer', f'Model loaded: {self.model_path}')
+                except Exception as e:
+                    show_notification('Instant Typer', f'Error loading model: {e}')
+            else:
+                print(f"Vosk model directory {self.model_path} does not contain expected model files.")
+                show_notification('Instant Typer', f'Vosk model directory {self.model_path} is invalid.')
+                self.model = None
+        else:
+            self.model = None
         print(f"Switched to language: {lang_code}")
         show_notification('Instant Typer', f'Switched to language: {lang_code}')
         self.tts_engine.say(f"Language changed to {lang_code}")
@@ -478,7 +509,10 @@ class VoiceTyper:
     def get_model_path(self, lang_code):
         # Use backend-specific logic for model path
         if self.selected_backend == 'vosk':
-            model_dir = self.LANG_MODELS[lang_code]
+            model_dir = self.LANG_MODELS.get(lang_code)
+            if not model_dir:
+                print(f"Language {lang_code} not supported for Vosk.")
+                return None
             path = os.path.join(self.MODELS_DIR, model_dir)
             if not os.path.isdir(path):
                 print(f"Model directory not found: {path}")
@@ -486,7 +520,7 @@ class VoiceTyper:
                 download_and_extract_small_vosk_models()
                 if not os.path.isdir(path):
                     print("Model still not found after download. Please check your internet connection or model availability.")
-                    sys.exit(1)
+                    return None
             return path
         elif self.selected_backend == 'whisper':
             # For whisper, just return the backend dir (model will be loaded by whisper)
@@ -503,16 +537,16 @@ class VoiceTyper:
             print(f"Backend {backend_name} not supported.")
             return
         save_config({'backend': backend_name, 'lang': self.selected_lang, 'mic_index': self.selected_mic_index})
-        # Show model manager dialog on backend change
-        if self.indicator and hasattr(self.indicator, 'root'):
-            self.show_model_manager()
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()  # Stop
+        # Update backend and model dir BEFORE showing model manager
         self.selected_backend = backend_name
-        # Update backend-specific model dir
         self.MODELS_DIR = os.path.join(self.MODELS_ROOT, backend_name)
         os.makedirs(self.MODELS_DIR, exist_ok=True)
+        # Show model manager dialog on backend change
+        if self.indicator and hasattr(self.indicator, 'root'):
+            self.show_model_manager()
         print(f"Switched to backend: {backend_name}")
         show_notification('Instant Typer', f'Switched to backend: {backend_name}')
         self.tts_engine.say(f"Backend changed to {backend_name}")
@@ -561,6 +595,10 @@ class VoiceTyper:
 
     def recognize_speech(self):
         if self.selected_backend == 'vosk':
+            if self.model is None:
+                print("Vosk model is not loaded. Please download or select a valid model.")
+                show_notification('Instant Typer', 'Vosk model is not loaded. Please download or select a valid model.')
+                return
             if self.selected_mic_index is None:
                 print("No microphone selected.")
                 return
@@ -610,7 +648,7 @@ class VoiceTyper:
                 stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, input_device_index=self.selected_mic_index, frames_per_buffer=8000)
                 stream.start_stream()
                 print("Speak into your microphone. Press Ctrl+C to stop.")
-                model = whisper.load_model('base')
+                model = whisper.load_model('base', download_root=self.MODELS_DIR)
                 chunk = 4000
                 buffer = b''
                 min_audio_seconds = 2  # Minimum audio length for Whisper
