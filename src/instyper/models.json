@@ -1,0 +1,170 @@
+{
+  "defaults": {
+    "vosk": "en",
+    "whisper": "tiny"
+  },
+  "models": [
+    {
+      "backend": "vosk",
+      "id": "en",
+      "name": "English",
+      "model": "vosk-model-small-en-us-0.15",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
+      "size": 50000000,
+      "notes": "Small English model"
+    },
+    {
+      "backend": "vosk",
+      "id": "de",
+      "name": "German",
+      "model": "vosk-model-small-de-zamia-0.3",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-de-zamia-0.3.zip",
+      "size": 48000000,
+      "notes": "Small German model"
+    },
+    {
+      "backend": "vosk",
+      "id": "nl",
+      "name": "Dutch",
+      "model": "vosk-model-small-nl-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-nl-0.22.zip",
+      "size": 47000000,
+      "notes": "Small Dutch model"
+    },
+    {
+      "backend": "vosk",
+      "id": "fr",
+      "name": "French",
+      "model": "vosk-model-small-fr-0.22",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip",
+      "size": 46000000,
+      "notes": "Small French model"
+    },
+    {
+      "backend": "vosk",
+      "id": "tr",
+      "name": "Turkish",
+      "model": "vosk-model-small-tr-0.3",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-tr-0.3.zip",
+      "size": 48000000,
+      "notes": "Small Turkish model"
+    },
+    {
+      "backend": "vosk",
+      "id": "es",
+      "name": "Spanish",
+      "model": "vosk-model-small-es-0.42",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip",
+      "size": 47000000,
+      "notes": "Small Spanish model"
+    },
+    {
+      "backend": "whisper",
+      "id": "tiny",
+      "name": "Tiny",
+      "model": "tiny",
+      "url": "https://huggingface.co/openai/whisper-tiny/resolve/main/whisper-tiny.pt",
+      "size": 39000000,
+      "notes": "Tiny Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "tiny.en",
+      "name": "Tiny (English-only)",
+      "model": "tiny.en",
+      "url": "https://huggingface.co/openai/whisper-tiny.en/resolve/main/whisper-tiny.en.pt",
+      "size": 39000000,
+      "notes": "Tiny Whisper model (English-only)"
+    },
+    {
+      "backend": "whisper",
+      "id": "base",
+      "name": "Base",
+      "model": "base",
+      "url": "https://huggingface.co/openai/whisper-base/resolve/main/whisper-base.pt",
+      "size": 74000000,
+      "notes": "Base Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "base.en",
+      "name": "Base (English-only)",
+      "model": "base.en",
+      "url": "https://huggingface.co/openai/whisper-base.en/resolve/main/whisper-base.en.pt",
+      "size": 74000000,
+      "notes": "Base Whisper model (English-only)"
+    },
+    {
+      "backend": "whisper",
+      "id": "small",
+      "name": "Small",
+      "model": "small",
+      "url": "https://huggingface.co/openai/whisper-small/resolve/main/whisper-small.pt",
+      "size": 244000000,
+      "notes": "Small Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "small.en",
+      "name": "Small (English-only)",
+      "model": "small.en",
+      "url": "https://huggingface.co/openai/whisper-small.en/resolve/main/whisper-small.en.pt",
+      "size": 244000000,
+      "notes": "Small Whisper model (English-only)"
+    },
+    {
+      "backend": "whisper",
+      "id": "medium",
+      "name": "Medium",
+      "model": "medium",
+      "url": "https://huggingface.co/openai/whisper-medium/resolve/main/whisper-medium.pt",
+      "size": 769000000,
+      "notes": "Medium Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "medium.en",
+      "name": "Medium (English-only)",
+      "model": "medium.en",
+      "url": "https://huggingface.co/openai/whisper-medium.en/resolve/main/whisper-medium.en.pt",
+      "size": 769000000,
+      "notes": "Medium Whisper model (English-only)"
+    },
+    {
+      "backend": "whisper",
+      "id": "large",
+      "name": "Large",
+      "model": "large",
+      "url": "https://huggingface.co/openai/whisper-large/resolve/main/whisper-large.pt",
+      "size": 1550000000,
+      "notes": "Large Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "large-v2",
+      "name": "Large-v2",
+      "model": "large-v2",
+      "url": "https://huggingface.co/openai/whisper-large-v2/resolve/main/whisper-large-v2.pt",
+      "size": 1550000000,
+      "notes": "Large-v2 Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "large-v3",
+      "name": "Large-v3",
+      "model": "large-v3",
+      "url": "https://huggingface.co/openai/whisper-large-v3/resolve/main/whisper-large-v3.pt",
+      "size": 1550000000,
+      "notes": "Large-v3 Whisper model (English + multilingual)"
+    },
+    {
+      "backend": "whisper",
+      "id": "turbo",
+      "name": "Turbo",
+      "model": "turbo",
+      "url": "https://huggingface.co/openai/whisper-turbo/resolve/main/whisper-turbo.pt",
+      "size": 1550000000,
+      "notes": "Turbo Whisper model (English + multilingual)"
+    }
+  ]
+} 

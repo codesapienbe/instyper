@@ -25,6 +25,22 @@ import pathlib
 import urllib.request
 import math
 import numpy as np
+import tkinter.messagebox
+import logging
+
+# Setup logging to file and console
+LOG_PATH = os.path.expanduser('~/.instyper/instyper.log')
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(LOG_PATH, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+def log(msg, level='info'):
+    getattr(logging, level)(msg)
 
 # Central models directory in user home
 USER_MODELS_DIR = os.path.expanduser('~/.instyper/models')
@@ -62,8 +78,10 @@ def save_config(data):
     try:
         with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f)
+        # Log config save (summary)
+        log(f"Config saved: {list(data.keys())}")
     except Exception as e:
-        print(f"Error saving config: {e}")
+        log(f"Error saving config: {e}")
 
 def create_icon(is_active=False):
     """Create a simple icon for the system tray"""
@@ -91,6 +109,7 @@ def create_icon(is_active=False):
 
 def show_notification(title, message):
     """Show a platform-specific notification"""
+    log(f"Notification: {title} - {message}")
     system = platform.system()
     if system == 'Darwin':  # macOS
         notification.notify(
@@ -139,42 +158,33 @@ class ListeningIndicator:
     def destroy(self):
         self.root.destroy()
 
-VOSK_MODEL_LIST_URL = 'https://alphacephei.com/vosk/models/model-list.json'
-WHISPER_MODELS = [
-    'tiny', 'tiny.en', 'base', 'base.en', 'small', 'small.en', 'medium', 'medium.en', 'large', 'large-v2', 'large-v3', 'turbo'
-]
-SPEECHBRAIN_MODELS = [
-    {
-        'name': 'speechbrain/asr-transformer-transformerlm-librispeech',
-        'lang': 'en',
-        'desc': 'English ASR Transformer (LibriSpeech)'
-    }
-]
-COQUI_MODELS = [
-    {
-        'name': 'coqui/stt-en',
-        'lang': 'en',
-        'desc': 'English STT (Coqui)'
-    }
-]
-PADDLESPEECH_MODELS = [
-    {
-        'name': 'paddlespeech/asr-conformer-en',
-        'lang': 'en',
-        'desc': 'English ASR Conformer (PaddleSpeech)'
-    }
-]
+# Ensure ~/.instyper/models.json exists and is up to date if missing
+REPO_MODELS_JSON = os.path.join(os.path.dirname(__file__), 'models.json')
+USER_MODELS_JSON = os.path.expanduser('~/.instyper/models.json')
+if not os.path.isfile(USER_MODELS_JSON):
+    shutil.copy2(REPO_MODELS_JSON, USER_MODELS_JSON)
 
-def human_size(nbytes):
-    if nbytes is None:
-        return ''
-    suffixes = ['B', 'KB', 'MB', 'GB', 'TB']
-    i = 0
-    while nbytes >= 1024 and i < len(suffixes)-1:
-        nbytes /= 1024.
-        i += 1
-    f = ('%.2f' % nbytes).rstrip('0').rstrip('.')
-    return f'{f} {suffixes[i]}'
+# Load models.json (user copy) and get defaults
+with open(USER_MODELS_JSON, 'r', encoding='utf-8') as f:
+    MODELS_JSON = json.load(f)
+ALL_MODELS = MODELS_JSON['models']
+MODEL_DEFAULTS = MODELS_JSON.get('defaults', {})
+
+def get_backend_models(backend):
+    return [m for m in ALL_MODELS if m['backend'] == backend]
+
+# Helper: get model by backend+id or backend+model
+def get_model_by_id(backend, model_id):
+    for m in ALL_MODELS:
+        if m['backend'] == backend and m['id'] == model_id:
+            return m
+    return None
+
+def get_model_by_name(backend, model_name):
+    for m in ALL_MODELS:
+        if m['backend'] == backend and m['model'] == model_name:
+            return m
+    return None
 
 class ModelManagerDialog:
     def __init__(self, parent, backend, models_dir, on_download):
@@ -192,13 +202,14 @@ class ModelManagerDialog:
         self.progress_label = tk.Label(self.top, textvariable=self.progress_var, font=("Arial", 10), fg="#00796B")
         self.progress_label.pack(pady=2)
         self.refresh_models()
-        self.download_btn = tk.Button(self.top, text="Download selected model", command=self.download_model)
+        self.download_btn = tk.Button(self.top, text="Download selected model", command=self.download_or_select_model, state=tk.DISABLED)
         self.download_btn.pack(pady=8)
         tk.Button(self.top, text="Close", command=self.top.destroy).pack(pady=2)
         self.listbox.bind('<<ListboxSelect>>', self.on_select)
         self.selected_model = None
         self.downloading = False
         self.downloaded_models = set()
+        self.selected_downloaded_model = None
 
     def refresh_models(self):
         self.listbox.delete(0, tk.END)
@@ -206,7 +217,7 @@ class ModelManagerDialog:
         self.downloaded_models = set()
         if self.backend == 'vosk':
             try:
-                resp = requests.get(VOSK_MODEL_LIST_URL, timeout=10)
+                resp = requests.get(REPO_MODELS_JSON, timeout=10)
                 models = resp.json()
                 for m in models:
                     name = m.get('name')
@@ -225,17 +236,19 @@ class ModelManagerDialog:
             except Exception as e:
                 self.listbox.insert(tk.END, f"Error fetching model list: {e}")
         elif self.backend == 'whisper':
-            for m in WHISPER_MODELS:
-                model_dir = os.path.join(self.models_dir, m)
-                is_downloaded = os.path.isdir(model_dir) or any(f.startswith(m) for f in os.listdir(self.models_dir))
-                display = m
+            for m in get_backend_models('whisper'):
+                model_dir = os.path.join(self.models_dir, m['model'])
+                is_downloaded = os.path.isdir(model_dir) or any(f.startswith(m['model']) for f in os.listdir(self.models_dir))
+                display = m['model']
                 if is_downloaded:
                     display += " (downloaded)"
-                    self.downloaded_models.add(m)
+                    self.downloaded_models.add(m['model'])
                 self.listbox.insert(tk.END, display)
-                self.available_models.append({'name': m})
+                self.available_models.append(m)
         self.progress_var.set('')
         self.selected_model = None
+        self.selected_downloaded_model = None
+        self.download_btn.config(state=tk.DISABLED, text="Download selected model")
 
     def on_select(self, event):
         idx = self.listbox.curselection()
@@ -243,25 +256,55 @@ class ModelManagerDialog:
             model = self.available_models[idx[0]]
             name = model.get('name', model) if isinstance(model, dict) else model
             if name in self.downloaded_models:
-                self.selected_model = None
-                self.progress_var.set('Model already downloaded.')
+                self.selected_model = model
+                self.selected_downloaded_model = name
+                self.progress_var.set('Model already downloaded. You can select it.')
+                self.download_btn.config(state=tk.NORMAL, text="Select model")
             else:
                 self.selected_model = model
+                self.selected_downloaded_model = None
+                self.download_btn.config(state=tk.NORMAL, text="Download selected model")
         else:
             self.selected_model = None
+            self.selected_downloaded_model = None
+            self.download_btn.config(state=tk.DISABLED, text="Download selected model")
 
-    def download_model(self):
+    def download_or_select_model(self):
         if self.downloading or not self.selected_model:
             return
-        # Prevent download if already downloaded
         name = self.selected_model.get('name', self.selected_model) if isinstance(self.selected_model, dict) else self.selected_model
         if name in self.downloaded_models:
-            self.progress_var.set('Model already downloaded.')
+            # Select the model as active for the backend
+            self.set_active_model(name)
+            self.progress_var.set(f"Model '{name}' selected as active.")
             return
         self.downloading = True
         self.progress_var.set('Starting download...')
         self.download_btn.config(state=tk.DISABLED)
         threading.Thread(target=self._download_model_thread, daemon=True).start()
+
+    def set_active_model(self, name):
+        # For Vosk, set the language in config to match the selected model
+        if self.backend == 'vosk':
+            # Find the language code for the selected model
+            from .. import VoiceTyper  # relative import for context
+            for lang_code, model_dir in VoiceTyper.LANG_MODELS.items():
+                if model_dir == name:
+                    config = load_config()
+                    config['lang'] = lang_code
+                    config.pop('custom_vosk_model', None)
+                    save_config(config)
+                    break
+        elif self.backend == 'whisper':
+            # For Whisper, set the model in config if needed (extend as needed)
+            config = load_config()
+            config['whisper_model'] = name
+            save_config(config)
+        # Optionally, trigger a reload in the main app if needed
+
+    def download_model(self):
+        # Deprecated, replaced by download_or_select_model
+        pass
 
     def _download_model_thread(self):
         try:
@@ -272,7 +315,6 @@ class ModelManagerDialog:
                     self.progress_var.set('Invalid model info.')
                     return
                 dest_zip = os.path.join(self.models_dir, name + '.zip')
-                dest_dir = os.path.join(self.models_dir, name)
                 # Download with progress
                 def reporthook(blocknum, blocksize, totalsize):
                     if totalsize > 0:
@@ -288,7 +330,7 @@ class ModelManagerDialog:
                 self.refresh_models()
             elif self.backend == 'whisper':
                 import whisper
-                model_name = self.selected_model['name']
+                model_name = self.selected_model['model']
                 self.progress_var.set(f"Downloading {model_name} via whisper.load_model...")
                 # Whisper does not provide progress, so just show a spinner
                 spinner = ['|', '/', '-', '\\']
@@ -314,7 +356,7 @@ class ModelManagerDialog:
                 except ImportError:
                     self.progress_var.set('Please install speechbrain: pip install speechbrain')
                     return
-                model_name = self.selected_model['name']
+                model_name = self.selected_model['model']
                 self.progress_var.set(f"Downloading {model_name} via SpeechBrain API...")
                 # Show a spinner while downloading/loading
                 spinner = ['|', '/', '-', '\\']
@@ -340,7 +382,7 @@ class ModelManagerDialog:
                 except ImportError:
                     self.progress_var.set('Please install huggingface_hub: pip install huggingface_hub')
                     return
-                model_name = self.selected_model['name']
+                model_name = self.selected_model['model']
                 self.progress_var.set(f"Downloading {model_name} from HuggingFace...")
                 spinner = ['|', '/', '-', '\\']
                 done = [False]
@@ -365,7 +407,7 @@ class ModelManagerDialog:
                 except ImportError:
                     self.progress_var.set('Please install paddlespeech and huggingface_hub: pip install paddlespeech huggingface_hub')
                     return
-                model_name = self.selected_model['name']
+                model_name = self.selected_model['model']
                 self.progress_var.set(f"Downloading {model_name} from HuggingFace...")
                 spinner = ['|', '/', '-', '\\']
                 done = [False]
@@ -415,48 +457,26 @@ class VoiceTyper:
             self.tts_engine.say('Microphone found.')
             self.tts_engine.runAndWait()
         p.terminate()
-        # Vosk language selection
-        self.LANG_MODELS = {
-            'EN': 'vosk-model-small-en-us-0.15',
-            'DE': 'vosk-model-small-de-zamia-0.3',
-            'NL': 'vosk-model-small-nl-0.22',
-            'FR': 'vosk-model-small-fr-0.22',
-            'TR': 'vosk-model-small-tr-0.3',
-            'ES': 'vosk-model-small-es-0.42',
-            'CN': 'vosk-model-small-cn-0.22',
-            'CS': 'vosk-model-small-cs-0.4-rhasspy',
-            'HI': 'vosk-model-small-hi-0.22',
-            'IT': 'vosk-model-small-it-0.22',
-            'JA': 'vosk-model-small-ja-0.22',
-            'KO': 'vosk-model-small-ko-0.22',
-            'KZ': 'vosk-model-small-kz-0.15',
-            'PL': 'vosk-model-small-pl-0.22',
-            'RU': 'vosk-model-small-ru-0.22',
-            'SV': 'vosk-model-small-sv-rhasspy-0.15',
-            'TE': 'vosk-model-small-te-0.42',
-            'UK': 'vosk-model-small-uk-v3-small',
-            'UZ': 'vosk-model-small-uz-0.22',
-            'FA': 'vosk-model-small-fa-0.42',
-        }
-        # Backend-specific models directory
         self.MODELS_ROOT = USER_MODELS_DIR
         self.MODELS_DIR = os.path.join(self.MODELS_ROOT, 'vosk')
         os.makedirs(self.MODELS_DIR, exist_ok=True)
         config = load_config()
-        # Backend selection
         if platform.system() == 'Windows':
             self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt']
         else:
             self.BACKENDS = ['vosk', 'whisper', 'speechbrain', 'coqui-stt', 'paddlepaddle']
-        # Always default to 'vosk' if not specified
-        self.selected_backend = config.get('backend', 'vosk')  # Default to vosk
-        self.selected_lang = config.get('lang', 'EN')  # Default to English
+        self.selected_backend = config.get('backend', 'vosk')
+        # Use default model from models.json if not set
+        default_lang = MODEL_DEFAULTS.get('vosk', 'en').upper()
+        self.selected_lang = config.get('lang', default_lang)
+        self.LANG_MODELS = {m['id'].upper(): m['model'] for m in get_backend_models('vosk')}
+        self.LANG_UI_NAMES = {m['id'].upper(): m['name'] for m in get_backend_models('vosk')}
+        self.MODEL_META = {m['model']: m for m in get_backend_models('vosk')}
         if self.selected_backend == 'vosk' and self.selected_lang not in self.LANG_MODELS:
-            print(f"Language {self.selected_lang} not supported. Defaulting to EN.")
-            self.selected_lang = 'EN'
+            log(f"Language {self.selected_lang} not supported. Defaulting to {default_lang}.")
+            self.selected_lang = default_lang
         self.model_path = self.get_model_path(self.selected_lang)
         if self.selected_backend == 'vosk' and self.model_path and os.path.isdir(self.model_path):
-            # Check for expected Vosk model files (e.g., conf, am, graph subdirs)
             expected = all(os.path.isdir(os.path.join(self.model_path, d)) for d in ['conf', 'am', 'graph'])
             if expected:
                 try:
@@ -465,97 +485,116 @@ class VoiceTyper:
                 except Exception as e:
                     show_notification('Instant Typer', f'Error loading model: {e}')
             else:
-                print(f"Vosk model directory {self.model_path} does not contain expected model files.")
+                log(f"Vosk model directory {self.model_path} does not contain expected model files.")
                 show_notification('Instant Typer', f'Vosk model directory {self.model_path} is invalid.')
                 self.model = None
         else:
             self.model = None
 
     def set_language(self, lang_code):
-        if lang_code not in self.LANG_MODELS:
-            print(f"Language {lang_code} not supported.")
-            return
-        save_config({'backend': self.selected_backend, 'lang': lang_code, 'mic_index': self.selected_mic_index})
-        was_listening = self.is_listening
-        if was_listening:
-            self.toggle_listening()  # Stop
-        self.selected_lang = lang_code
-        # Always use backend-specific model dir
-        self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
-        os.makedirs(self.MODELS_DIR, exist_ok=True)
-        self.model_path = self.get_model_path(self.selected_lang)
-        if self.selected_backend == 'vosk' and self.model_path and os.path.isdir(self.model_path):
-            # Check for expected Vosk model files (e.g., conf, am, graph subdirs)
-            expected = all(os.path.isdir(os.path.join(self.model_path, d)) for d in ['conf', 'am', 'graph'])
-            if expected:
+        config = load_config()
+        custom_model = config.get('custom_vosk_model')
+        if self.selected_backend == 'vosk' and custom_model:
+            self.selected_lang = lang_code
+            self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
+            os.makedirs(self.MODELS_DIR, exist_ok=True)
+            self.model_path = os.path.join(self.MODELS_DIR, custom_model)
+            if os.path.isdir(self.model_path):
                 try:
                     self.model = Model(self.model_path)
                     show_notification('Instant Typer', f'Model loaded: {self.model_path}')
                 except Exception as e:
                     show_notification('Instant Typer', f'Error loading model: {e}')
             else:
-                print(f"Vosk model directory {self.model_path} does not contain expected model files.")
-                show_notification('Instant Typer', f'Vosk model directory {self.model_path} is invalid.')
-                self.model = None
-        else:
-            self.model = None
-        print(f"Switched to language: {lang_code}")
-        show_notification('Instant Typer', f'Switched to language: {lang_code}')
-        self.tts_engine.say(f"Language changed to {lang_code}")
-        self.tts_engine.runAndWait()
-        if was_listening:
-            self.toggle_listening()  # Restart
+                show_notification('Instant Typer', f'Custom Vosk model directory {self.model_path} not found.')
+            log(f"Switched to custom Vosk model: {custom_model}")
+            self.tts_engine.say(f"Vosk model changed")
+            self.tts_engine.runAndWait()
+            return
+        orig_set_language = self.set_language
+        def set_language_with_custom(self, lang_code):
+            config = load_config()
+            custom_model = config.get('custom_vosk_model')
+            if self.selected_backend == 'vosk' and custom_model:
+                self.selected_lang = lang_code
+                self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
+                os.makedirs(self.MODELS_DIR, exist_ok=True)
+                self.model_path = os.path.join(self.MODELS_DIR, custom_model)
+                if os.path.isdir(self.model_path):
+                    try:
+                        self.model = Model(self.model_path)
+                        show_notification('Instant Typer', f'Model loaded: {self.model_path}')
+                    except Exception as e:
+                        show_notification('Instant Typer', f'Error loading model: {e}')
+                else:
+                    show_notification('Instant Typer', f'Custom Vosk model directory {self.model_path} not found.')
+                log(f"Switched to custom Vosk model: {custom_model}")
+                self.tts_engine.say(f"Vosk model changed")
+                self.tts_engine.runAndWait()
+                return
+            orig_set_language(lang_code)
+        import types
+        self.set_language = types.MethodType(set_language_with_custom, self)
 
     def get_model_path(self, lang_code):
         # Use backend-specific logic for model path
         if self.selected_backend == 'vosk':
             model_dir = self.LANG_MODELS.get(lang_code)
             if not model_dir:
-                print(f"Language {lang_code} not supported for Vosk.")
+                log(f"Language {lang_code} not supported for Vosk.")
                 return None
             path = os.path.join(self.MODELS_DIR, model_dir)
             if not os.path.isdir(path):
-                print(f"Model directory not found: {path}")
-                print("Attempting to download and extract small Vosk models...")
-                download_and_extract_small_vosk_models()
-                if not os.path.isdir(path):
-                    print("Model still not found after download. Please check your internet connection or model availability.")
-                    return None
+                log(f"Model directory not found: {path}")
+                # Do not attempt to auto-download here; just return None
+                return None
             return path
         elif self.selected_backend == 'whisper':
-            # For whisper, just return the backend dir (model will be loaded by whisper)
             return self.MODELS_DIR
         elif self.selected_backend == 'speechbrain':
-            # For speechbrain, return the backend dir (model will be loaded by speechbrain)
             return self.MODELS_DIR
         else:
-            # For other backends, return the backend dir (placeholder)
             return self.MODELS_DIR
 
     def set_backend(self, backend_name):
         if backend_name not in self.BACKENDS:
-            print(f"Backend {backend_name} not supported.")
+            log(f"Backend {backend_name} not supported.")
             return
-        save_config({'backend': backend_name, 'lang': self.selected_lang, 'mic_index': self.selected_mic_index})
+        # Use default model for backend if not set
+        config = load_config()
+        if backend_name == 'vosk':
+            default_lang = MODEL_DEFAULTS.get('vosk', 'en').upper()
+            if 'lang' not in config or config['lang'] not in self.LANG_MODELS:
+                config['lang'] = default_lang
+                save_config(config)
+                self.set_language(default_lang)
+        elif backend_name == 'whisper':
+            default_model = MODEL_DEFAULTS.get('whisper', 'tiny')
+            if 'whisper_model' not in config:
+                config['whisper_model'] = default_model
+                save_config(config)
+        # Add similar logic for other backends if needed
+        save_config({'backend': backend_name, 'lang': config.get('lang', MODEL_DEFAULTS.get('vosk', 'en').upper()), 'mic_index': self.selected_mic_index})
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()  # Stop
-        # Update backend and model dir BEFORE showing model manager
         self.selected_backend = backend_name
         self.MODELS_DIR = os.path.join(self.MODELS_ROOT, backend_name)
         os.makedirs(self.MODELS_DIR, exist_ok=True)
-        # Show model manager dialog on backend change
-        if self.indicator and hasattr(self.indicator, 'root'):
-            self.show_model_manager()
-        print(f"Switched to backend: {backend_name}")
+        log(f"Switched to backend: {backend_name}")
         show_notification('Instant Typer', f'Switched to backend: {backend_name}')
         self.tts_engine.say(f"Backend changed to {backend_name}")
         self.tts_engine.runAndWait()
         if was_listening:
             self.toggle_listening()  # Restart
+        self.refresh_menu()
+        self.update_icon_title()
+        # Check if model is available after switching backend
+        if not self.is_model_available():
+            self.notify_and_prompt_model_download(backend_name)
 
     def start(self):
-        print("Instant Typer is running. Use the tray icon to start/stop voice typing.")
+        log("Instant Typer is running. Use the tray icon to start/stop voice typing.")
         try:
             while True:
                 time.sleep(0.1)
@@ -566,7 +605,7 @@ class VoiceTyper:
         self.is_listening = not self.is_listening
         if self.is_listening:
             show_notification('Instant Typer', 'Voice typing started')
-            print("Voice typing started...")
+            log("Voice typing started...")
             if self.indicator:
                 self.indicator.label.config(text='Listening...')
                 self.indicator.show()
@@ -576,7 +615,7 @@ class VoiceTyper:
             self.recognition_thread.start()
         else:
             show_notification('Instant Typer', 'Voice typing stopped')
-            print("Voice typing stopped.")
+            log("Voice typing stopped.")
             self.stop_event.set()
             if self.recognition_thread:
                 self.recognition_thread.join(timeout=2)
@@ -596,25 +635,25 @@ class VoiceTyper:
     def recognize_speech(self):
         if self.selected_backend == 'vosk':
             if self.model is None:
-                print("Vosk model is not loaded. Please download or select a valid model.")
+                log("Vosk model is not loaded. Please download or select a valid model.")
                 show_notification('Instant Typer', 'Vosk model is not loaded. Please download or select a valid model.')
                 return
             if self.selected_mic_index is None:
-                print("No microphone selected.")
+                log("No microphone selected.")
                 return
             p = pyaudio.PyAudio()
             try:
                 stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, input_device_index=self.selected_mic_index, frames_per_buffer=8000)
                 stream.start_stream()
                 rec = KaldiRecognizer(self.model, 16000)
-                print("Speak into your microphone. Press Ctrl+C to stop.")
+                log("Speak into your microphone. Press Ctrl+C to stop.")
                 while not self.stop_event.is_set():
                     data = stream.read(4000, exception_on_overflow=False)
                     if rec.AcceptWaveform(data):
                         result = rec.Result()
                         text = json.loads(result).get('text', '')
                         if text and not self.stop_event.is_set():
-                            print(f"Typing: {text}")
+                            log(f"Typing: {text}")
                             if self.indicator:
                                 self.indicator.label.config(text='Typing...')
                             pyperclip.copy(text + " ")
@@ -622,7 +661,7 @@ class VoiceTyper:
                             if self.indicator:
                                 self.indicator.label.config(text='Listening...')
             except Exception as e:
-                print(f"Error with Vosk recognition: {e}")
+                log(f"Error with Vosk recognition: {e}", 'error')
                 show_notification('Instant Typer', f'Vosk error: {e}')
                 if self.indicator:
                     self.indicator.label.config(text='Error')
@@ -637,18 +676,20 @@ class VoiceTyper:
             try:
                 import whisper
             except ImportError:
-                print("Whisper is not installed. Please install it with 'pip install openai-whisper'.")
+                log("Whisper is not installed. Please install it with 'pip install openai-whisper'.")
                 show_notification('Instant Typer', 'Whisper is not installed. Please install openai-whisper.')
                 return
             if self.selected_mic_index is None:
-                print("No microphone selected.")
+                log("No microphone selected.")
                 return
             p = pyaudio.PyAudio()
             try:
                 stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, input_device_index=self.selected_mic_index, frames_per_buffer=8000)
                 stream.start_stream()
-                print("Speak into your microphone. Press Ctrl+C to stop.")
-                model = whisper.load_model('base', download_root=self.MODELS_DIR)
+                log("Speak into your microphone. Press Ctrl+C to stop.")
+                config = load_config()
+                whisper_model = config.get('whisper_model', 'base')
+                model = whisper.load_model(whisper_model, download_root=self.MODELS_DIR)
                 chunk = 4000
                 buffer = b''
                 min_audio_seconds = 2  # Minimum audio length for Whisper
@@ -668,11 +709,11 @@ class VoiceTyper:
                             wf.writeframes(buffer[:max_audio_bytes])
                             wf.close()
                             wav_path = tmp_wav.name
-                        print("Transcribing with Whisper...")
+                        log("Transcribing with Whisper...")
                         result = model.transcribe(wav_path, language=self.selected_lang.lower())
                         text = result.get('text', '').strip()
                         if text and not self.stop_event.is_set():
-                            print(f"Typing: {text}")
+                            log(f"Typing: {text}")
                             if self.indicator:
                                 self.indicator.label.config(text='Typing...')
                             pyperclip.copy(text + " ")
@@ -681,7 +722,7 @@ class VoiceTyper:
                                 self.indicator.label.config(text='Listening...')
                         buffer = b''
             except Exception as e:
-                print(f"Error with Whisper recognition: {e}")
+                log(f"Error with Whisper recognition: {e}", 'error')
                 show_notification('Instant Typer', f'Whisper error: {e}')
                 if self.indicator:
                     self.indicator.label.config(text='Error')
@@ -696,17 +737,17 @@ class VoiceTyper:
             try:
                 from speechbrain.pretrained import EncoderDecoderASR
             except ImportError:
-                print("SpeechBrain is not installed. Please install it with 'pip install speechbrain'.")
+                log("SpeechBrain is not installed. Please install it with 'pip install speechbrain'.")
                 show_notification('Instant Typer', 'SpeechBrain is not installed. Please install speechbrain.')
                 return
             if self.selected_mic_index is None:
-                print("No microphone selected.")
+                log("No microphone selected.")
                 return
             p = pyaudio.PyAudio()
             try:
                 stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, input_device_index=self.selected_mic_index, frames_per_buffer=8000)
                 stream.start_stream()
-                print("Speak into your microphone. Press Ctrl+C to stop.")
+                log("Speak into your microphone. Press Ctrl+C to stop.")
                 chunk = 4000
                 buffer = b''
                 min_audio_seconds = 2
@@ -727,10 +768,10 @@ class VoiceTyper:
                             wf.writeframes(buffer[:max_audio_bytes])
                             wf.close()
                             wav_path = tmp_wav.name
-                        print("Transcribing with SpeechBrain...")
+                        log("Transcribing with SpeechBrain...")
                         text = asr.transcribe_file(wav_path)
                         if text and not self.stop_event.is_set():
-                            print(f"Typing: {text}")
+                            log(f"Typing: {text}")
                             if self.indicator:
                                 self.indicator.label.config(text='Typing...')
                             pyperclip.copy(text + " ")
@@ -739,7 +780,7 @@ class VoiceTyper:
                                 self.indicator.label.config(text='Listening...')
                         buffer = b''
             except Exception as e:
-                print(f"Error with SpeechBrain recognition: {e}")
+                log(f"Error with SpeechBrain recognition: {e}", 'error')
                 show_notification('Instant Typer', f'SpeechBrain error: {e}')
                 if self.indicator:
                     self.indicator.label.config(text='Error')
@@ -754,17 +795,17 @@ class VoiceTyper:
             try:
                 import stt
             except ImportError:
-                print("Coqui STT is not installed. Please install it with 'pip install stt huggingface_hub'.")
+                log("Coqui STT is not installed. Please install it with 'pip install stt huggingface_hub'.")
                 show_notification('Instant Typer', 'Coqui STT is not installed. Please install stt and huggingface_hub.')
                 return
             if self.selected_mic_index is None:
-                print("No microphone selected.")
+                log("No microphone selected.")
                 return
             p = pyaudio.PyAudio()
             try:
                 stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, input_device_index=self.selected_mic_index, frames_per_buffer=8000)
                 stream.start_stream()
-                print("Speak into your microphone. Press Ctrl+C to stop.")
+                log("Speak into your microphone. Press Ctrl+C to stop.")
                 chunk = 4000
                 buffer = b''
                 min_audio_seconds = 2
@@ -799,7 +840,7 @@ class VoiceTyper:
                             wf.writeframes(buffer[:max_audio_bytes])
                             wf.close()
                             wav_path = tmp_wav.name
-                        print("Transcribing with Coqui STT...")
+                        log("Transcribing with Coqui STT...")
                         import numpy as np
                         import wave as pywave
                         with pywave.open(wav_path, 'rb') as wf:
@@ -807,7 +848,7 @@ class VoiceTyper:
                             audio = np.frombuffer(frames, np.int16)
                         text = model.stt(audio)
                         if text and not self.stop_event.is_set():
-                            print(f"Typing: {text}")
+                            log(f"Typing: {text}")
                             if self.indicator:
                                 self.indicator.label.config(text='Typing...')
                             pyperclip.copy(text + " ")
@@ -816,7 +857,7 @@ class VoiceTyper:
                                 self.indicator.label.config(text='Listening...')
                         buffer = b''
             except Exception as e:
-                print(f"Error with Coqui STT recognition: {e}")
+                log(f"Error with Coqui STT recognition: {e}", 'error')
                 show_notification('Instant Typer', f'Coqui STT error: {e}')
                 if self.indicator:
                     self.indicator.label.config(text='Error')
@@ -831,17 +872,17 @@ class VoiceTyper:
             try:
                 from paddlespeech.cli.asr.infer import ASRExecutor
             except ImportError:
-                print("PaddleSpeech is not installed. Please install it with 'pip install paddlespeech huggingface_hub'.")
+                log("PaddleSpeech is not installed. Please install it with 'pip install paddlespeech huggingface_hub'.")
                 show_notification('Instant Typer', 'PaddleSpeech is not installed. Please install paddlespeech and huggingface_hub.')
                 return
             if self.selected_mic_index is None:
-                print("No microphone selected.")
+                log("No microphone selected.")
                 return
             p = pyaudio.PyAudio()
             try:
                 stream = p.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, input_device_index=self.selected_mic_index, frames_per_buffer=8000)
                 stream.start_stream()
-                print("Speak into your microphone. Press Ctrl+C to stop.")
+                log("Speak into your microphone. Press Ctrl+C to stop.")
                 chunk = 4000
                 buffer = b''
                 min_audio_seconds = 2
@@ -863,10 +904,10 @@ class VoiceTyper:
                             wf.writeframes(buffer[:max_audio_bytes])
                             wf.close()
                             wav_path = tmp_wav.name
-                        print("Transcribing with PaddleSpeech...")
+                        log("Transcribing with PaddleSpeech...")
                         text = asr(audio_file=wav_path, model='conformer', lang='en', sample_rate=16000, config=None, ckpt_path=None, device='cpu')
                         if text and not self.stop_event.is_set():
-                            print(f"Typing: {text}")
+                            log(f"Typing: {text}")
                             if self.indicator:
                                 self.indicator.label.config(text='Typing...')
                             pyperclip.copy(text + " ")
@@ -875,7 +916,7 @@ class VoiceTyper:
                                 self.indicator.label.config(text='Listening...')
                         buffer = b''
             except Exception as e:
-                print(f"Error with PaddleSpeech recognition: {e}")
+                log(f"Error with PaddleSpeech recognition: {e}", 'error')
                 show_notification('Instant Typer', f'PaddleSpeech error: {e}')
                 if self.indicator:
                     self.indicator.label.config(text='Error')
@@ -887,20 +928,118 @@ class VoiceTyper:
                     pass
                 p.terminate()
         else:
-            print(f"Unknown backend: {self.selected_backend}")
+            log(f"Unknown backend: {self.selected_backend}", 'error')
             show_notification('Instant Typer', f'Unknown backend: {self.selected_backend}')
 
     def cleanup(self):
-        print("Cleaning up...")
+        log("Cleaning up...")
         self.stop_event.set()
         if self.recognition_thread and self.recognition_thread.is_alive():
             self.recognition_thread.join(timeout=2)
-        print("Instant Typer stopped.")
+        log("Instant Typer stopped.")
 
     def show_model_manager(self):
         def on_download(backend, models_dir):
             show_notification('Model Manager', f'Download for {backend} not implemented yet.')
         ModelManagerDialog(self.indicator.root, self.selected_backend, self.MODELS_DIR, on_download)
+
+    def refresh_menu(self):
+        icon = pystray.Icon("instyper")
+        icon.icon = create_icon()
+        self.update_icon_title()
+        icon.update_menu()
+
+    def update_icon_title(self):
+        backend, model = self.selected_backend, self.model_path
+        icon = pystray.Icon("instyper")
+        icon.title = f"Instant Typer ({backend}: {model})"
+
+    def notify_and_prompt_model_download(self, backend, lang_code=None):
+        # Show notification and open Model menu if model is missing
+        if backend == 'vosk':
+            model_name = None
+            if lang_code:
+                model_name = self.LANG_MODELS.get(lang_code)
+            else:
+                config = load_config()
+                lang = config.get('lang', 'EN')
+                model_name = self.LANG_MODELS.get(lang)
+            show_notification('Instant Typer', f'Model for {lang_code or lang} is missing. Please download it from the Model menu.')
+        elif backend == 'whisper':
+            config = load_config()
+            model_name = config.get('whisper_model', 'base')
+            show_notification('Instant Typer', f'Whisper model "{model_name}" is missing. Please download it from the Model menu.')
+        else:
+            show_notification('Instant Typer', f'Model for {backend} is missing. Please download it from the Model menu.')
+        # Try to open the Model menu automatically (simulate click)
+        # This is not natively supported by pystray, so show a Tkinter dialog as fallback
+        try:
+            root = self.indicator.root
+            root.after(100, lambda: tk.messagebox.showinfo('Model Required', 'Please open the tray icon, go to the Model menu, and download the required model.'))
+        except Exception:
+            pass
+
+    def is_model_available(self):
+        backend = self.selected_backend
+        if backend == 'vosk':
+            config = load_config()
+            custom_model = config.get('custom_vosk_model')
+            if custom_model:
+                model_dir = os.path.join(USER_MODELS_DIR, 'vosk', custom_model)
+                return os.path.isdir(model_dir)
+            lang = config.get('lang', 'EN')
+            model_dir = self.LANG_MODELS.get(lang)
+            if not model_dir:
+                return False
+            path = os.path.join(USER_MODELS_DIR, 'vosk', model_dir)
+            return os.path.isdir(path)
+        elif backend == 'whisper':
+            config = load_config()
+            model = config.get('whisper_model', 'base')
+            models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+            files = os.listdir(models_dir) if os.path.isdir(models_dir) else []
+            return os.path.isdir(models_dir) and (os.path.isdir(os.path.join(models_dir, model)) or any(f.startswith(model) for f in files))
+        # Add similar checks for other backends if needed
+        return True
+
+    def on_select_lang(self, lang_code):
+        self.set_language(lang_code)
+        self.refresh_menu()
+        # Check if model is available after switching language
+        if self.selected_backend == 'vosk' and not self.is_model_available():
+            self.notify_and_prompt_model_download('vosk', lang_code)
+
+    def on_select_backend(self, backend_name):
+        self.set_backend(backend_name)
+        # Ensure default model/language for new backend if missing
+        config = load_config()
+        if backend_name == 'vosk':
+            if 'lang' not in config or config['lang'] not in self.LANG_MODELS:
+                config['lang'] = 'EN'
+                save_config(config)
+                self.set_language('EN')
+        elif backend_name == 'whisper':
+            if 'whisper_model' not in config:
+                config['whisper_model'] = 'base'
+                save_config(config)
+        self.refresh_menu()
+        self.update_icon_title()
+        # Check if model is available after switching backend
+        if not self.is_model_available():
+            self.notify_and_prompt_model_download(backend_name)
+
+    def on_toggle(self, icon, item):
+        if not self.is_model_available():
+            self.notify_and_prompt_model_download(self.selected_backend)
+            return
+        self.toggle_listening()
+        icon.icon = create_icon(self.is_listening)
+        self.update_icon_title()
+        icon.update_menu()
+        if self.is_listening:
+            self.indicator.root.after(0, self.indicator.show)
+        else:
+            self.indicator.root.after(0, self.indicator.hide)
 
 class TutorialManager:
     def __init__(self, root, tray_icon):
@@ -975,21 +1114,38 @@ class TutorialManager:
             "That's it! You're ready to use Instyper. You can revisit this tutorial by deleting the '.first_run_complete' file in your ~/.instyper folder.")
 
 def main():
-    print("Starting Instant Typer...")
+    log("Starting Instant Typer...")
     indicator = ListeningIndicator()
     voice_typer = VoiceTyper(indicator=indicator)
     atexit.register(voice_typer.cleanup)
+
+    def get_active_backend_and_model():
+        backend = voice_typer.selected_backend
+        if backend == 'vosk':
+            config = load_config()
+            lang = config.get('lang', 'EN')
+            model = voice_typer.LANG_MODELS.get(lang, '?')
+        elif backend == 'whisper':
+            config = load_config()
+            model = config.get('whisper_model', 'base')
+        else:
+            model = '(not implemented)'
+        return backend, model
+
+    def update_icon_title(icon):
+        backend, model = get_active_backend_and_model()
+        icon.title = f"Instant Typer ({backend}: {model})"
+
     icon = pystray.Icon("instyper")
     icon.icon = create_icon()
-    icon.title = f"Instant Typer ({voice_typer.selected_backend})"
+    update_icon_title(icon)
     threads = {}
 
-    # Microphone selection logic for tray menu
     def on_select_mic(idx):
-        voice_typer.set_mic_index(idx - 1)  # -1 means default
+        voice_typer.set_mic_index(idx - 1)
         icon.update_menu()
+        update_icon_title(icon)
     def mic_checked(idx):
-        # Default is checked if selected_mic_index is None
         if idx == 0:
             return voice_typer.selected_mic_index is None
         return voice_typer.selected_mic_index == (idx - 1)
@@ -1002,10 +1158,13 @@ def main():
     mic_names = ["Default"] + (voice_typer.mic_names if voice_typer.mic_names else [])
     mic_menu_items = [make_mic_menu_item(idx, name) for idx, name in enumerate(mic_names)]
 
-    # Language selection logic for tray menu
     def on_select_lang(lang_code):
         voice_typer.set_language(lang_code)
         icon.update_menu()
+        update_icon_title(icon)
+        # Check if model is available after switching language
+        if voice_typer.selected_backend == 'vosk' and not voice_typer.is_model_available():
+            voice_typer.notify_and_prompt_model_download('vosk', lang_code)
     def lang_checked(lang_code):
         return voice_typer.selected_lang == lang_code
     def make_lang_menu_item(lang_code):
@@ -1013,27 +1172,185 @@ def main():
             on_select_lang(lang_code)
         def is_checked(item):
             return lang_checked(lang_code)
-        return pystray.MenuItem(lang_code, on_select, checked=is_checked)
+        # Use UI name from JSON
+        label = voice_typer.LANG_UI_NAMES.get(lang_code, lang_code)
+        return pystray.MenuItem(label, on_select, checked=is_checked)
     lang_menu_items = [make_lang_menu_item(lang) for lang in voice_typer.LANG_MODELS.keys()]
 
-    # Backend selection logic for tray menu
+    # --- Backend menu (flat) ---
     def on_select_backend(backend_name):
         voice_typer.set_backend(backend_name)
-        icon.title = f"Instant Typer ({voice_typer.selected_backend})"
-        icon.update_menu()
+        # Ensure default model/language for new backend if missing
+        config = load_config()
+        if backend_name == 'vosk':
+            if 'lang' not in config or config['lang'] not in voice_typer.LANG_MODELS:
+                config['lang'] = 'EN'
+                save_config(config)
+                voice_typer.set_language('EN')
+        elif backend_name == 'whisper':
+            if 'whisper_model' not in config:
+                config['whisper_model'] = 'base'
+                save_config(config)
+        refresh_menu()
+        update_icon_title(icon)
+        # Check if model is available after switching backend
+        if not voice_typer.is_model_available():
+            voice_typer.notify_and_prompt_model_download(backend_name)
     def backend_checked(backend_name):
         return voice_typer.selected_backend == backend_name
     def make_backend_menu_item(backend_name):
-        if backend_name in ['vosk', 'whisper']:
-            def on_select(icon, item):
-                on_select_backend(backend_name)
-            def is_checked(item):
-                return backend_checked(backend_name)
-            return pystray.MenuItem(backend_name, on_select, checked=is_checked)
-        else:
-            # Show as disabled (not selectable)
-            return pystray.MenuItem(f"{backend_name} (not implemented)", None, enabled=False)
+        def on_select(icon, item):
+            on_select_backend(backend_name)
+        def is_checked(item):
+            return backend_checked(backend_name)
+        return pystray.MenuItem(backend_name, on_select, checked=is_checked)
     backend_menu_items = [make_backend_menu_item(backend) for backend in voice_typer.BACKENDS]
+
+    # --- Model menu (for current backend only) ---
+    def get_vosk_models():
+        return get_backend_models('vosk')
+    def get_whisper_models():
+        return get_backend_models('whisper')
+    def get_downloaded_vosk_models(models_dir):
+        if not os.path.isdir(models_dir):
+            return set()
+        return set([m['model'] for m in get_vosk_models() if os.path.isdir(os.path.join(models_dir, m['model']))])
+    def get_downloaded_whisper_models(models_dir):
+        if not os.path.isdir(models_dir):
+            return set()
+        files = os.listdir(models_dir)
+        return set([m['model'] for m in get_whisper_models() if os.path.isdir(os.path.join(models_dir, m['model'])) or any(f.startswith(m['model']) for f in files)])
+    def get_active_model(backend):
+        config = load_config()
+        if backend == 'vosk':
+            lang = config.get('lang', 'EN').upper()
+            return voice_typer.LANG_MODELS.get(lang)
+        elif backend == 'whisper':
+            return config.get('whisper_model', 'base')
+        return None
+    def set_active_model(backend, model_name):
+        config = load_config()
+        if backend == 'vosk':
+            found = False
+            for lang_code, model_dir in voice_typer.LANG_MODELS.items():
+                if model_dir == model_name:
+                    config['lang'] = lang_code
+                    config.pop('custom_vosk_model', None)
+                    save_config(config)
+                    voice_typer.set_language(lang_code)
+                    found = True
+                    break
+            if not found:
+                # Custom/unmapped model
+                config['custom_vosk_model'] = model_name
+                save_config(config)
+                # Force reload
+                if voice_typer.is_listening:
+                    voice_typer.toggle_listening()
+                    voice_typer.toggle_listening()
+        elif backend == 'whisper':
+            config['whisper_model'] = model_name
+            save_config(config)
+        if voice_typer.is_listening and backend != 'vosk':
+            voice_typer.toggle_listening()
+            voice_typer.toggle_listening()
+        update_icon_title(icon)
+    def download_vosk_model(model, models_dir, on_done):
+        url = model.get('url')
+        name = model.get('name')
+        if not url or not name:
+            show_notification('Instant Typer', 'Invalid Vosk model info.')
+            return
+        dest_zip = os.path.join(models_dir, name + '.zip')
+        def do_download():
+            try:
+                show_notification('Instant Typer', f'Downloading {name}...')
+                urllib.request.urlretrieve(url, dest_zip)
+                show_notification('Instant Typer', f'Extracting {name}...')
+                with zipfile.ZipFile(dest_zip, 'r') as zip_ref:
+                    zip_ref.extractall(self.models_dir)
+                os.remove(dest_zip)
+                show_notification('Instant Typer', f'Model {name} ready!')
+                refresh_menu()
+                update_icon_title(icon)
+                if on_done:
+                    on_done()
+            except Exception as e:
+                show_notification('Instant Typer', f'Error downloading {name}: {e}')
+        threading.Thread(target=do_download, daemon=True).start()
+    def download_whisper_model(model_name, models_dir, on_done):
+        import whisper
+        def do_download():
+            try:
+                show_notification('Instant Typer', f'Downloading {model_name}...')
+                whisper.load_model(model_name, download_root=models_dir)
+                show_notification('Instant Typer', f'Model {model_name} ready!')
+                refresh_menu()
+                update_icon_title(icon)
+                if on_done:
+                    on_done()
+            except Exception as e:
+                show_notification('Instant Typer', f'Error downloading {model_name}: {e}')
+        threading.Thread(target=do_download, daemon=True).start()
+    def make_model_menu_items():
+        backend = voice_typer.selected_backend
+        models_dir = os.path.join(USER_MODELS_DIR, backend)
+        os.makedirs(models_dir, exist_ok=True)
+        active_model = get_active_model(backend)
+        items = []
+        if backend == 'vosk':
+            available_models = get_vosk_models()
+            downloaded = get_downloaded_vosk_models(models_dir)
+            for m in available_models:
+                name = m['name']
+                model_dir = m['model']
+                label = name
+                if model_dir in downloaded:
+                    label += ' (downloaded)'
+                def make_on_select(model_dir=model_dir, m=m):
+                    def on_select(icon, item):
+                        if model_dir in get_downloaded_vosk_models(models_dir):
+                            set_active_model('vosk', model_dir)
+                            icon.update_menu()
+                        else:
+                            def after_download():
+                                set_active_model('vosk', model_dir)
+                                icon.update_menu()
+                            download_vosk_model(m, models_dir, after_download)
+                    return on_select
+                def make_is_checked(model_dir=model_dir):
+                    def is_checked(item):
+                        return active_model == model_dir
+                    return is_checked
+                items.append(pystray.MenuItem(label, make_on_select(), checked=make_is_checked(), enabled=True))
+        elif backend == 'whisper':
+            available_models = get_whisper_models()
+            downloaded = get_downloaded_whisper_models(models_dir)
+            for m in available_models:
+                label = m['name']
+                model_dir = m['model']
+                if model_dir in downloaded:
+                    label += ' (downloaded)'
+                def make_on_select(model_dir=model_dir, m=m):
+                    def on_select(icon, item):
+                        if model_dir in get_downloaded_whisper_models(models_dir):
+                            set_active_model('whisper', model_dir)
+                            icon.update_menu()
+                        else:
+                            def after_download():
+                                set_active_model('whisper', model_dir)
+                                icon.update_menu()
+                            download_whisper_model(model_dir, models_dir, after_download)
+                    return on_select
+                def make_is_checked(model_dir=model_dir):
+                    def is_checked(item):
+                        return active_model == model_dir
+                    return is_checked
+                items.append(pystray.MenuItem(label, make_on_select(), checked=make_is_checked(), enabled=True))
+        else:
+            items.append(pystray.MenuItem('Not implemented', None, enabled=False))
+        return items
+    model_menu_items = make_model_menu_items
 
     def on_exit(icon, item):
         icon.stop()
@@ -1043,38 +1360,88 @@ def main():
             if t.is_alive():
                 t.join(timeout=2)
         os._exit(0)
+    def is_model_available():
+        backend = voice_typer.selected_backend
+        if backend == 'vosk':
+            config = load_config()
+            custom_model = config.get('custom_vosk_model')
+            if custom_model:
+                model_dir = os.path.join(USER_MODELS_DIR, 'vosk', custom_model)
+                return os.path.isdir(model_dir)
+            lang = config.get('lang', 'EN')
+            model_dir = voice_typer.LANG_MODELS.get(lang)
+            if not model_dir:
+                return False
+            path = os.path.join(USER_MODELS_DIR, 'vosk', model_dir)
+            return os.path.isdir(path)
+        elif backend == 'whisper':
+            config = load_config()
+            model = config.get('whisper_model', 'base')
+            models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+            files = os.listdir(models_dir) if os.path.isdir(models_dir) else []
+            return os.path.isdir(models_dir) and (os.path.isdir(os.path.join(models_dir, model)) or any(f.startswith(model) for f in files))
+        # Add similar checks for other backends if needed
+        return True
+
     def on_toggle(icon, item):
+        if not is_model_available():
+            notify_and_prompt_model_download(voice_typer.selected_backend)
+            return
         voice_typer.toggle_listening()
         icon.icon = create_icon(voice_typer.is_listening)
-        icon.title = f"Instant Typer ({voice_typer.selected_backend})"
+        update_icon_title(icon)
         icon.update_menu()
         if voice_typer.is_listening:
             indicator.root.after(0, indicator.show)
         else:
             indicator.root.after(0, indicator.hide)
-    icon.menu = pystray.Menu(
-        pystray.MenuItem(
-            'Toggle Voice Typing',
-            on_toggle,
-            checked=lambda item: voice_typer.is_listening
-        ),
-        pystray.MenuItem(
-            'Language',
-            pystray.Menu(*lang_menu_items)
-        ),
-        pystray.MenuItem(
-            'Microphone',
-            pystray.Menu(*mic_menu_items)
-        ),
-        pystray.MenuItem(
-            'Backend',
-            pystray.Menu(*backend_menu_items)
-        ),
-        pystray.MenuItem(
-            'Exit',
-            on_exit
+
+    def make_system_menu():
+        return pystray.Menu(
+            pystray.MenuItem('Purge All Models', lambda icon, item: purge_all_models()),
+            pystray.MenuItem('Reset User Settings', lambda icon, item: reset_user_settings()),
         )
-    )
+
+    def build_menu():
+        return pystray.Menu(
+            pystray.MenuItem(
+                'Toggle Voice Typing',
+                on_toggle,
+                checked=lambda item: voice_typer.is_listening,
+                enabled=is_model_available()
+            ),
+            pystray.MenuItem(
+                'Language',
+                pystray.Menu(*lang_menu_items)
+            ),
+            pystray.MenuItem(
+                'Microphone',
+                pystray.Menu(*mic_menu_items)
+            ),
+            pystray.MenuItem(
+                'Backend',
+                pystray.Menu(*backend_menu_items)
+            ),
+            pystray.MenuItem(
+                'Model',
+                pystray.Menu(*model_menu_items())
+            ),
+            pystray.MenuItem(
+                'System',
+                make_system_menu()
+            ),
+            pystray.MenuItem(
+                'Exit',
+                on_exit
+            )
+        )
+
+    icon.menu = build_menu()
+
+    def refresh_menu():
+        icon.menu = build_menu()
+        update_icon_title(icon)
+
     icon_thread = threading.Thread(target=icon.run)
     icon_thread.daemon = True
     icon_thread.start()
@@ -1090,6 +1457,15 @@ def main():
     if not os.path.isfile(flag_path):
         tutorial = TutorialManager(indicator.root, icon)
         indicator.root.after(1000, tutorial.start)
+        # Download only English small model for Vosk and tiny for Whisper
+        try:
+            download_vosk_english_small()
+        except Exception as e:
+            log(f"Error downloading Vosk English model: {e}", 'error')
+        try:
+            download_whisper_tiny()
+        except Exception as e:
+            log(f"Error downloading Whisper tiny model: {e}", 'error')
 
     indicator.root.mainloop()
 
@@ -1125,31 +1501,31 @@ def vosk_multilang_recognize():
     MODELS_DIR = USER_MODELS_DIR
 
     def select_language():
-        print("Select a language:")
+        log("Select a language:")
         for idx, lang in enumerate(LANG_MODELS.keys(), 1):
-            print(f"  {idx}. {lang}")
+            log(f"  {idx}. {lang}")
         choice = input("Enter number: ").strip()
         try:
             idx = int(choice) - 1
             lang = list(LANG_MODELS.keys())[idx]
             return lang
         except (ValueError, IndexError):
-            print("Invalid selection.")
+            log("Invalid selection.")
             sys.exit(1)
 
     def get_model_path(lang_code):
         model_dir = LANG_MODELS[lang_code]
         path = os.path.join(MODELS_DIR, model_dir)
         if not os.path.isdir(path):
-            print(f"Model directory not found: {path}")
-            print("Please ensure the model is extracted correctly.")
+            log(f"Model directory not found: {path}")
+            log("Please ensure the model is extracted correctly.")
             sys.exit(1)
         return path
 
-    print("Vosk Multi-language Speech Recognition")
+    log("Vosk Multi-language Speech Recognition")
     lang = select_language()
     model_path = get_model_path(lang)
-    print(f"Loading model for {lang} from {model_path} ...")
+    log(f"Loading model for {lang} from {model_path} ...")
     model = Model(model_path)
 
     p = pyaudio.PyAudio()
@@ -1157,7 +1533,7 @@ def vosk_multilang_recognize():
     stream.start_stream()
 
     rec = KaldiRecognizer(model, 16000)
-    print("Speak into your microphone. Press Ctrl+C to stop.")
+    log("Speak into your microphone. Press Ctrl+C to stop.")
     try:
         while True:
             data = stream.read(4000, exception_on_overflow=False)
@@ -1165,51 +1541,77 @@ def vosk_multilang_recognize():
                 result = rec.Result()
                 text = json.loads(result).get('text', '')
                 if text:
-                    print(f"Recognized: {text}")
+                    log(f"Recognized: {text}")
     except KeyboardInterrupt:
-        print("\nExiting...")
+        log("\nExiting...")
     finally:
         stream.stop_stream()
         stream.close()
         p.terminate()
 
-def download_and_extract_small_vosk_models():
-    """
-    Downloads all Vosk models with 'small' in their URL from https://alphacephei.com/vosk/models,
-    extracts them to ~/.instyper/models/vosk, and skips extraction if the model directory already exists.
-    """
-    MODELS_URL = "https://alphacephei.com/vosk/models"
-    print(f"Fetching model list from {MODELS_URL} ...")
-    resp = requests.get(MODELS_URL)
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-    links = soup.find_all("a")
-    model_links = [a["href"] for a in links if a.has_attr("href") and "small" in a["href"] and a["href"].endswith(".zip")]
-    print(f"Found {len(model_links)} small models to process.")
-    USER_MODELS_DIR = os.path.expanduser('~/.instyper/models')
-    VOSK_MODELS_DIR = os.path.join(USER_MODELS_DIR, 'vosk')
-    os.makedirs(VOSK_MODELS_DIR, exist_ok=True)
-    for link in model_links:
-        model_url = link if link.startswith("http") else f"https://alphacephei.com/vosk/models/{link}"
-        model_zip_name = os.path.basename(model_url)
-        model_dir_name = model_zip_name[:-4] if model_zip_name.endswith('.zip') else model_zip_name
-        model_dir_path = os.path.join(VOSK_MODELS_DIR, model_dir_name)
-        if os.path.isdir(model_dir_path):
-            print(f"Model directory already exists, skipping: {model_dir_name}")
-            continue
-        print(f"Downloading {model_url} ...")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmpf:
-            r = requests.get(model_url, stream=True)
-            r.raise_for_status()
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    tmpf.write(chunk)
-            tmpf.flush()
-            print(f"Extracting {model_zip_name} to {model_dir_path} ...")
-            with zipfile.ZipFile(tmpf.name, 'r') as zip_ref:
-                zip_ref.extractall(VOSK_MODELS_DIR)
-        print(f"Model {model_dir_name} extracted.")
-    print("All small models processed.")
+def download_vosk_english_small():
+    import requests, zipfile, os, tempfile
+    EN_MODEL_NAME = 'vosk-model-small-en-us-0.15'
+    EN_MODEL_URL = 'https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip'
+    models_dir = os.path.join(USER_MODELS_DIR, 'vosk')
+    model_dir = os.path.join(models_dir, EN_MODEL_NAME)
+    if os.path.isdir(model_dir):
+        log(f"Vosk English model already present: {model_dir}")
+        return
+    os.makedirs(models_dir, exist_ok=True)
+    log(f"Downloading Vosk English model from {EN_MODEL_URL}")
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmpf:
+        r = requests.get(EN_MODEL_URL, stream=True)
+        r.raise_for_status()
+        for chunk in r.iter_content(chunk_size=8192):
+            if chunk:
+                tmpf.write(chunk)
+        tmpf.flush()
+        log(f"Extracting {EN_MODEL_NAME} to {models_dir}")
+        with zipfile.ZipFile(tmpf.name, 'r') as zip_ref:
+            zip_ref.extractall(models_dir)
+    log(f"Vosk English model {EN_MODEL_NAME} extracted.")
+
+def download_whisper_tiny():
+    import whisper
+    models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+    os.makedirs(models_dir, exist_ok=True)
+    # Check if already present
+    files = os.listdir(models_dir)
+    if any(f.startswith('tiny') for f in files):
+        log("Whisper 'tiny' model already present.")
+        return
+    log("Downloading Whisper 'tiny' model...")
+    whisper.load_model('tiny', download_root=models_dir)
+    log("Whisper 'tiny' model downloaded.")
+
+def purge_all_models():
+    if not tkinter.messagebox.askyesno("Confirm", "Are you sure you want to delete ALL downloaded models? This cannot be undone."):
+        return
+    import glob
+    models_root = USER_MODELS_DIR
+    for item in glob.glob(os.path.join(models_root, '*')):
+        try:
+            if os.path.isdir(item):
+                shutil.rmtree(item)
+            else:
+                os.remove(item)
+            log(f"Deleted: {item}")
+        except Exception as e:
+            log(f"Error deleting {item}: {e}", 'error')
+    show_notification('Instant Typer', 'All models purged.')
+    # Optionally, refresh menu
+
+def reset_user_settings():
+    if not tkinter.messagebox.askyesno("Confirm", "Are you sure you want to reset all user settings? This cannot be undone."):
+        return
+    try:
+        if os.path.isfile(CONFIG_PATH):
+            os.remove(CONFIG_PATH)
+            log(f"Deleted config: {CONFIG_PATH}")
+        show_notification('Instant Typer', 'User settings reset.')
+    except Exception as e:
+        log(f"Error resetting user settings: {e}", 'error')
 
 if __name__ == "__main__":
     import argparse
