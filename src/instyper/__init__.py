@@ -27,6 +27,7 @@ import math
 import numpy as np
 import tkinter.messagebox
 import logging
+import abc
 
 # Setup logging to file and console
 LOG_PATH = os.path.expanduser('~/.instyper/instyper.log')
@@ -494,47 +495,75 @@ class VoiceTyper:
     def set_language(self, lang_code):
         config = load_config()
         custom_model = config.get('custom_vosk_model')
+        self.selected_lang = lang_code
+        self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
+        os.makedirs(self.MODELS_DIR, exist_ok=True)
         if self.selected_backend == 'vosk' and custom_model:
-            self.selected_lang = lang_code
-            self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
-            os.makedirs(self.MODELS_DIR, exist_ok=True)
             self.model_path = os.path.join(self.MODELS_DIR, custom_model)
-            if os.path.isdir(self.model_path):
-                try:
-                    self.model = Model(self.model_path)
-                    show_notification('Instant Typer', f'Model loaded: {self.model_path}')
-                except Exception as e:
-                    show_notification('Instant Typer', f'Error loading model: {e}')
-            else:
+            if not os.path.isdir(self.model_path):
                 show_notification('Instant Typer', f'Custom Vosk model directory {self.model_path} not found.')
+                self.model = None
+                return
+            try:
+                self.model = Model(self.model_path)
+                show_notification('Instant Typer', f'Model loaded: {self.model_path}')
+            except Exception as e:
+                show_notification('Instant Typer', f'Error loading model: {e}')
             log(f"Switched to custom Vosk model: {custom_model}")
             self.tts_engine.say(f"Vosk model changed")
             self.tts_engine.runAndWait()
             return
-        orig_set_language = self.set_language
-        def set_language_with_custom(self, lang_code):
-            config = load_config()
-            custom_model = config.get('custom_vosk_model')
-            if self.selected_backend == 'vosk' and custom_model:
-                self.selected_lang = lang_code
-                self.MODELS_DIR = os.path.join(self.MODELS_ROOT, self.selected_backend)
-                os.makedirs(self.MODELS_DIR, exist_ok=True)
-                self.model_path = os.path.join(self.MODELS_DIR, custom_model)
-                if os.path.isdir(self.model_path):
-                    try:
-                        self.model = Model(self.model_path)
-                        show_notification('Instant Typer', f'Model loaded: {self.model_path}')
-                    except Exception as e:
-                        show_notification('Instant Typer', f'Error loading model: {e}')
-                else:
-                    show_notification('Instant Typer', f'Custom Vosk model directory {self.model_path} not found.')
-                log(f"Switched to custom Vosk model: {custom_model}")
-                self.tts_engine.say(f"Vosk model changed")
-                self.tts_engine.runAndWait()
+        # Normal Vosk language switching
+        if self.selected_backend == 'vosk':
+            model_dir = self.LANG_MODELS.get(lang_code)
+            if not model_dir:
+                log(f"Language {lang_code} not supported for Vosk.")
+                show_notification('Instant Typer', f'Language {lang_code} not supported for Vosk.')
+                self.model = None
                 return
-            orig_set_language(lang_code)
-        import types
-        self.set_language = types.MethodType(set_language_with_custom, self)
+            self.model_path = os.path.join(self.MODELS_DIR, model_dir)
+            if not os.path.isdir(self.model_path):
+                # Download model if missing
+                model_info = next((m for m in get_backend_models('vosk') if m['model'] == model_dir), None)
+                if model_info:
+                    show_notification('Instant Typer', f'Downloading {model_info["name"]}...')
+                    try:
+                        VoskModelDownloader(model_info, self.MODELS_DIR, lambda: self.set_language(lang_code)).download()
+                        show_notification('Instant Typer', f'Downloading and extracting {model_info["name"]}...')
+                    except Exception as e:
+                        show_notification('Instant Typer', f'Error downloading {model_info["name"]}: {e}')
+                    self.model = None
+                    return
+                else:
+                    show_notification('Instant Typer', f'Model info for {lang_code} not found.')
+                    self.model = None
+                    return
+            try:
+                self.model = Model(self.model_path)
+                show_notification('Instant Typer', f'Model loaded: {self.model_path}')
+            except Exception as e:
+                show_notification('Instant Typer', f'Error loading model: {e}')
+            log(f"Switched to Vosk language: {lang_code}")
+            self.tts_engine.say(f"Language changed")
+            self.tts_engine.runAndWait()
+            return
+        # Whisper: check and download model if missing
+        if self.selected_backend == 'whisper':
+            whisper_model = config.get('whisper_model', 'tiny')
+            models_dir = os.path.join(USER_MODELS_DIR, 'whisper')
+            files = os.listdir(models_dir) if os.path.isdir(models_dir) else []
+            model_present = os.path.isdir(os.path.join(models_dir, whisper_model)) or any(f.startswith(whisper_model) for f in files)
+            if not model_present:
+                show_notification('Instant Typer', f'Downloading Whisper model {whisper_model}...')
+                try:
+                    WhisperModelDownloader(whisper_model, models_dir, lambda: self.set_language(lang_code)).download()
+                    show_notification('Instant Typer', f'Downloading and extracting Whisper model {whisper_model}...')
+                except Exception as e:
+                    show_notification('Instant Typer', f'Error downloading Whisper model {whisper_model}: {e}')
+                self.model = None
+                return
+            # Model is present, nothing else to do for Whisper here
+        # Add logic for other backends if needed
 
     def get_model_path(self, lang_code):
         # Use backend-specific logic for model path
@@ -1289,16 +1318,17 @@ def main():
                 show_notification('Instant Typer', f'Downloading {name}...')
                 urllib.request.urlretrieve(url, dest_zip)
                 show_notification('Instant Typer', f'Extracting {name}...')
+                log(f"Extracting {dest_zip} to {models_dir}")
                 with zipfile.ZipFile(dest_zip, 'r') as zip_ref:
-                    zip_ref.extractall(self.models_dir)
+                    zip_ref.extractall(models_dir)
+                log(f"Extraction complete: {models_dir}")
                 os.remove(dest_zip)
                 show_notification('Instant Typer', f'Model {name} ready!')
-                refresh_menu()
-                update_icon_title(icon)
                 if on_done:
                     on_done()
             except Exception as e:
                 show_notification('Instant Typer', f'Error downloading {name}: {e}')
+                log(f"Error downloading/extracting {name}: {e}", 'error')
         threading.Thread(target=do_download, daemon=True).start()
     def download_whisper_model(model_name, models_dir, on_done):
         import whisper
@@ -1307,8 +1337,6 @@ def main():
                 show_notification('Instant Typer', f'Downloading {model_name}...')
                 whisper.load_model(model_name, download_root=models_dir)
                 show_notification('Instant Typer', f'Model {model_name} ready!')
-                refresh_menu()
-                update_icon_title(icon)
                 if on_done:
                     on_done()
             except Exception as e:
@@ -1338,7 +1366,7 @@ def main():
                             def after_download():
                                 set_active_model('vosk', model_dir)
                                 icon.update_menu()
-                            download_vosk_model(m, models_dir, after_download)
+                            VoskModelDownloader(m, models_dir, after_download).download()
                     return on_select
                 def make_is_checked(model_dir=model_dir):
                     def is_checked(item):
@@ -1362,7 +1390,7 @@ def main():
                             def after_download():
                                 set_active_model('whisper', model_dir)
                                 icon.update_menu()
-                            download_whisper_model(model_dir, models_dir, after_download)
+                            WhisperModelDownloader(model_dir, models_dir, after_download).download()
                     return on_select
                 def make_is_checked(model_dir=model_dir):
                     def is_checked(item):
@@ -1687,6 +1715,80 @@ def reset_user_settings():
         show_notification('Instant Typer', 'User settings reset.')
     except Exception as e:
         log(f"Error resetting user settings: {e}", 'error')
+
+class BaseModelDownloader(abc.ABC):
+    def __init__(self, model_info, models_dir, on_done=None):
+        self.model_info = model_info
+        self.models_dir = models_dir
+        self.on_done = on_done
+
+    @abc.abstractmethod
+    def is_present(self):
+        pass
+
+    @abc.abstractmethod
+    def download(self):
+        pass
+
+    @abc.abstractmethod
+    def extract(self, archive_path):
+        pass
+
+class VoskModelDownloader(BaseModelDownloader):
+    def is_present(self):
+        name = self.model_info.get('name')
+        return os.path.isdir(os.path.join(self.models_dir, name))
+
+    def download(self):
+        import urllib.request
+        import threading
+        import zipfile
+        url = self.model_info.get('url')
+        name = self.model_info.get('name')
+        dest_zip = os.path.join(self.models_dir, name + '.zip')
+        def do_download():
+            try:
+                show_notification('Instant Typer', f'Downloading {name}...')
+                urllib.request.urlretrieve(url, dest_zip)
+                show_notification('Instant Typer', f'Extracting {name}...')
+                self.extract(dest_zip)
+                os.remove(dest_zip)
+                show_notification('Instant Typer', f'Model {name} ready!')
+                if self.on_done:
+                    self.on_done()
+            except Exception as e:
+                show_notification('Instant Typer', f'Error downloading {name}: {e}')
+                log(f"Error downloading/extracting {name}: {e}", 'error')
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def extract(self, archive_path):
+        import zipfile
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(self.models_dir)
+
+class WhisperModelDownloader(BaseModelDownloader):
+    def is_present(self):
+        model_name = self.model_info
+        files = os.listdir(self.models_dir) if os.path.isdir(self.models_dir) else []
+        return os.path.isdir(os.path.join(self.models_dir, model_name)) or any(f.startswith(model_name) for f in files)
+
+    def download(self):
+        import whisper
+        import threading
+        model_name = self.model_info
+        def do_download():
+            try:
+                show_notification('Instant Typer', f'Downloading {model_name}...')
+                whisper.load_model(model_name, download_root=self.models_dir)
+                show_notification('Instant Typer', f'Model {model_name} ready!')
+                if self.on_done:
+                    self.on_done()
+            except Exception as e:
+                show_notification('Instant Typer', f'Error downloading {model_name}: {e}')
+        threading.Thread(target=do_download, daemon=True).start()
+
+    def extract(self, archive_path):
+        pass  # Not needed for Whisper
 
 if __name__ == "__main__":
     import argparse
