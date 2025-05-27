@@ -485,18 +485,16 @@ class ListeningIndicator:
 class ModelManagerDialog:
     """Dialog for managing and downloading models."""
     
-    def __init__(self, parent: tk.Widget, backend: str, models_dir: str, 
-                 on_download: Optional[Callable] = None):
+    def __init__(self, parent: tk.Widget, backend: str, models_dir: str, on_download: Optional[Callable] = None, parent_app=None):
         self.top = tk.Toplevel(parent)
         self.top.title(f"Model Manager - {backend}")
         self.top.geometry("420x340")
-        
         self.backend = backend
         self.models_dir = models_dir
         self.on_download = on_download
         self.downloading = False
         self.selected_model = None
-        
+        self.parent = parent_app  # <-- store the parent app (VoiceTyper)
         self._setup_ui()
         self._refresh_models()
     
@@ -539,24 +537,30 @@ class ModelManagerDialog:
         """Refresh the list of available models."""
         self.listbox.delete(0, tk.END)
         self.available_models = []
-        
+        # Get the currently active model for this backend
+        config = ConfigManager.load()
+        active_model = None
+        if self.backend == 'vosk':
+            active_model = config.get('vosk_model')
+        elif self.backend == 'whisper':
+            active_model = config.get('whisper_model')
         backend_models = models_config.get_backend_models(self.backend)
         for model in backend_models:
             model_name = model.get('name', model.get('model', 'Unknown'))
             size_str = human_size(model.get('size'))
             notes = model.get('notes', '')
-            
             display = f"{model_name}"
             if size_str:
                 display += f" | {size_str}"
             if notes:
                 display += f" | {notes}"
-            
             # Check if downloaded
             model_dir = os.path.join(self.models_dir, model['model'])
             if os.path.isdir(model_dir):
                 display += " (downloaded)"
-            
+            # Indicate if this is the active model
+            if model['model'] == active_model:
+                display += " (active)"
             self.listbox.insert(tk.END, display)
             self.available_models.append(model)
     
@@ -622,13 +626,17 @@ class ModelManagerDialog:
             self.on_download(self.backend, self.models_dir)
     
     def _set_active_model(self, model_name: str) -> None:
-        """Set the model as active in configuration."""
+        """Set the model as active in configuration and reload backend."""
         config = ConfigManager.load()
         if self.backend == 'vosk':
             config['vosk_model'] = model_name
         elif self.backend == 'whisper':
             config['whisper_model'] = model_name
         ConfigManager.save(config)
+        # Reinitialize backend if possible
+        if hasattr(self.parent, '_initialize_backend'):
+            self.parent.config = config
+            self.parent._initialize_backend()
 
 class TutorialManager:
     """Manages the first-run tutorial for new users."""
@@ -1106,7 +1114,7 @@ class VoiceTyper:
         def on_download(backend: str, models_dir: str):
             log(f"Model download requested for {backend}")
         
-        ModelManagerDialog(self.indicator.root, backend, models_dir, on_download)
+        ModelManagerDialog(self.indicator.root, backend, models_dir, on_download, parent_app=self)
     
     def cleanup(self) -> None:
         """Clean up resources."""
