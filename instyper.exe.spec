@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ml/vosk-model-small-en-us-0.15', 'ml/vosk-model-small-en-us-0.15'), ('ml/vosk-model-small-tr-0.3', 'ml/vosk-model-small-tr-0.3')]
+datas = []
 binaries = []
 hiddenimports = []
 tmp_ret = collect_all('vosk')

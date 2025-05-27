@@ -161,10 +161,10 @@ class ListeningIndicator:
         self.root.destroy()
 
 # Ensure ~/.instyper/models.json exists and is up to date if missing
-REPO_MODELS_JSON = os.path.join(os.path.dirname(__file__), 'models.json')
+REPO_MODELS_JSON = '@models.json'
 USER_MODELS_JSON = os.path.expanduser('~/.instyper/models.json')
 if not os.path.isfile(USER_MODELS_JSON):
-    shutil.copy2(REPO_MODELS_JSON, USER_MODELS_JSON)
+    shutil.copy2(os.path.join(os.path.dirname(__file__), 'models.json'), USER_MODELS_JSON)
 
 # Load models.json (user copy) and get defaults
 with open(USER_MODELS_JSON, 'r', encoding='utf-8') as f:
@@ -219,8 +219,9 @@ class ModelManagerDialog:
         self.downloaded_models = set()
         if self.backend == 'vosk':
             try:
-                resp = requests.get(REPO_MODELS_JSON, timeout=10)
-                models = resp.json()
+                # Use @models.json for local reference
+                with open('@models.json', 'r', encoding='utf-8') as f:
+                    models = json.load(f)['models']
                 for m in models:
                     name = m.get('name')
                     lang = m.get('lang', '')
@@ -1707,7 +1708,13 @@ def purge_all_models():
     vosk_dir = os.path.join(USER_MODELS_DIR, 'vosk')
     custom_vosk_model = config.get('custom_vosk_model')
     lang = config.get('lang', 'EN')
-    selected_vosk_model = custom_vosk_model or (voice_typer.LANG_MODELS.get(lang) if hasattr(voice_typer, 'LANG_MODELS') else None)
+    # Fallback for LANG_MODELS if voice_typer is not available
+    vt = globals().get('voice_typer')
+    if vt is not None and hasattr(vt, 'LANG_MODELS'):
+        lang_models = vt.LANG_MODELS
+    else:
+        lang_models = {m['id'].upper(): m['model'] for m in get_backend_models('vosk')}
+    selected_vosk_model = custom_vosk_model or lang_models.get(lang)
     if os.path.isdir(vosk_dir):
         for item in glob.glob(os.path.join(vosk_dir, '*')):
             if os.path.basename(item) == selected_vosk_model:
@@ -1829,12 +1836,29 @@ class WhisperModelDownloader(BaseModelDownloader):
     def extract(self, archive_path):
         pass  # Not needed for Whisper
 
+# Utility to notify and prompt model download from main context
+
+def notify_and_prompt_model_download(backend, lang_code=None):
+    try:
+        vt = globals().get('voice_typer')
+        if vt is not None:
+            vt.notify_and_prompt_model_download(backend, lang_code)
+        else:
+            raise Exception('voice_typer not available')
+    except Exception:
+        show_notification('Instant Typer', f'Model for {backend} is missing. Please download it from the Model menu.')
+
+# Utility: human-readable file size
+
+def human_size(nbytes):
+    if nbytes is None:
+        return ''
+    suffixes = ['B', 'KB', 'MB', 'GB', 'TB']
+    i = 0
+    while nbytes >= 1024 and i < len(suffixes) - 1:
+        nbytes /= 1024.0
+        i += 1
+    return f"{nbytes:.1f} {suffixes[i]}"
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Instant Typer")
-    parser.add_argument('--download-models', action='store_true', help='Download and extract all small Vosk models')
-    args = parser.parse_args()
-    if args.download_models:
-        download_and_extract_small_vosk_models()
-    else:
-        main()
+    main()
