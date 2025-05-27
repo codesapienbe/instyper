@@ -2,9 +2,64 @@
 
 Instyper is a cross-platform voice typing taskbar application.
 
-## Development
-- All dependencies are managed in `pyproject.toml`.
-- No binary builds or PyInstaller are used.
+---
+
+## ⚠️ Prerequisites & Manual Setup (No More Automated Makefile)
+
+**Automated installation via Makefile is no longer supported.**
+
+To ensure transparency and user control, you must manually install all prerequisites and dependencies. This avoids any background installation of system tools or libraries without your explicit approval.
+
+### 1. Python 3.10 (Required)
+- Instyper requires **Python 3.10** (not 3.11+ or 3.9-).
+- [Download Python 3.10](https://www.python.org/downloads/release/python-3100/)
+- Ensure `python` or `python3` in your terminal points to Python 3.10.
+
+### 2. Install `uv` (Python package/dependency manager)
+- `uv` is a fast, modern Python package manager (like pip, but faster).
+- Install it globally:
+  ```sh
+  # On all platforms (if you have pip):
+  pip install uv
+  # Or, if you have Python 3.10 as python3:
+  python3 -m pip install uv
+  ```
+- [uv documentation](https://github.com/astral-sh/uv)
+
+### 3. System Dependencies
+
+#### Windows
+- **Visual C++ Build Tools**: Required for building some Python packages.
+  - Download and install from [Microsoft Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
+- **FFmpeg**: Required for audio processing.
+  - Download from [FFmpeg.org](https://ffmpeg.org/download.html) and add to your PATH.
+
+#### macOS
+- **Homebrew** (recommended): [Install Homebrew](https://brew.sh/)
+- **FFmpeg**:
+  ```sh
+  brew install ffmpeg
+  ```
+
+#### Linux (Debian/Ubuntu)
+- **Build tools & FFmpeg**:
+  ```sh
+  sudo apt-get update
+  sudo apt-get install -y build-essential ffmpeg
+  ```
+
+### 4. Python Dependencies
+- All Python dependencies are listed in `pyproject.toml`.
+- Install them using `uv`:
+  ```sh
+  uv pip install --prerelease=allow -r pyproject.toml
+  ```
+- For OpenAI Whisper (if needed):
+  ```sh
+  uv pip install --prerelease=allow --upgrade git+https://github.com/openai/whisper.git
+  ```
+
+---
 
 ## License
 [MIT](LICENSE)

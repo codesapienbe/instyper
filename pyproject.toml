@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Yilmaz Mustafa", email = "ymus@tuta.io" }
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10,<3.11"
 dependencies = [
     "plyer>=2.1.0",
     "pyaudio>=0.2.14",
@@ -27,7 +27,7 @@ dependencies = [
     "huggingface_hub",          # Coqui STT, PaddlePaddle, TensorFlowASR model download
     "stt",                      # Coqui STT backend
     "paddlespeech; platform_system != 'Windows'",             # PaddlePaddle backend (Linux/macOS only)
-    "numpy",                    # For audio processing (TensorFlowASR, Coqui)
+    "numpy<2.0.0",              # Pin numpy to 1.x for OpenCV compatibility
 ]
 
 [project.scripts]
