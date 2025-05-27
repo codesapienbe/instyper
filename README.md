@@ -4,7 +4,7 @@ Instyper is a cross-platform voice typing taskbar application.
 
 ---
 
-## ⚠️ Prerequisites & Manual Setup (No More Automated Makefile)
+## ⚠️ Prerequisites & Setup
 
 **Automated installation via Makefile is no longer supported.**
 
