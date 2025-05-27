@@ -1,8 +1,4 @@
 {
-  "defaults": {
-    "vosk": "en",
-    "whisper": "tiny"
-  },
   "models": [
     {
       "backend": "vosk",
@@ -11,7 +7,8 @@
       "model": "vosk-model-small-en-us-0.15",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
       "size": 50000000,
-      "notes": "Small English model"
+      "notes": "Small English model",
+      "is_default": true
     },
     {
       "backend": "vosk",
@@ -74,7 +71,8 @@
       "model": "tiny",
       "url": "https://huggingface.co/openai/whisper-tiny/resolve/main/whisper-tiny.pt",
       "size": 39000000,
-      "notes": "Tiny Whisper model (English + multilingual)"
+      "notes": "Tiny Whisper model (English + multilingual)",
+      "is_default": true
     },
     {
       "backend": "whisper",
