@@ -344,99 +344,98 @@ class AudioDeviceManager:
 # MODEL DOWNLOAD AND MANAGEMENT
 # =============================================================================
 
-class BaseModelDownloader(abc.ABC):
-    """Abstract base class for model downloaders."""
-    
+class ModelDownloader(abc.ABC):
+    """Abstract base class for all model downloaders."""
     def __init__(self, model_info: Any, models_dir: str, on_done: Optional[Callable] = None):
         self.model_info = model_info
         self.models_dir = models_dir
         self.on_done = on_done
-    
     @abc.abstractmethod
     def is_present(self) -> bool:
-        """Check if the model is already downloaded."""
         pass
-    
     @abc.abstractmethod
     def download(self) -> None:
-        """Download the model."""
         pass
-    
     def _notify_progress(self, message: str) -> None:
-        """Show download progress notification."""
         show_notification(AppConstants.APP_NAME, message)
 
-class VoskModelDownloader(BaseModelDownloader):
+class VoskModelDownloader(ModelDownloader):
     """Downloads and manages Vosk models."""
-    
     def is_present(self) -> bool:
-        """Check if Vosk model is present."""
         model_name = self.model_info.get('model')
         return os.path.isdir(os.path.join(self.models_dir, model_name))
-    
     def download(self) -> None:
-        """Download and extract Vosk model."""
         def download_thread():
             try:
                 url = self.model_info.get('url')
                 name = self.model_info.get('name')
                 model_dir = self.model_info.get('model')
-                
                 if not url or not name:
                     self._notify_progress('Invalid model info.')
                     return
-                
                 dest_zip = os.path.join(self.models_dir, f"{model_dir}.zip")
-                
                 self._notify_progress(f'Downloading {name}...')
                 urllib.request.urlretrieve(url, dest_zip)
-                
                 self._notify_progress(f'Extracting {name}...')
                 with zipfile.ZipFile(dest_zip, 'r') as zip_ref:
                     zip_ref.extractall(self.models_dir)
-                
                 os.remove(dest_zip)
                 self._notify_progress(f'Model {name} ready!')
-                
                 if self.on_done:
                     self.on_done()
-                    
             except Exception as e:
                 self._notify_progress(f'Error downloading {name}: {e}')
                 log(f"Error downloading Vosk model: {e}", 'error')
-        
         threading.Thread(target=download_thread, daemon=True).start()
 
-class WhisperModelDownloader(BaseModelDownloader):
+class WhisperModelDownloader(ModelDownloader):
     """Downloads and manages Whisper models."""
-    
     def is_present(self) -> bool:
-        """Check if Whisper model is present."""
         model_name = self.model_info
         if not os.path.isdir(self.models_dir):
             return False
         files = os.listdir(self.models_dir)
         return any(f.startswith(model_name) for f in files)
-    
     def download(self) -> None:
-        """Download Whisper model."""
         def download_thread():
             try:
                 import whisper
                 model_name = self.model_info
-                
                 self._notify_progress(f'Downloading {model_name}...')
                 whisper.load_model(model_name, download_root=self.models_dir)
                 self._notify_progress(f'Model {model_name} ready!')
-                
                 if self.on_done:
                     self.on_done()
-                    
             except Exception as e:
                 self._notify_progress(f'Error downloading {model_name}: {e}')
                 log(f"Error downloading Whisper model: {e}", 'error')
-        
         threading.Thread(target=download_thread, daemon=True).start()
+
+class SpeechBrainModelDownloader(ModelDownloader):
+    def is_present(self) -> bool:
+        # Implement logic to check if SpeechBrain model is present
+        pass
+
+    def download(self) -> None:
+        # Implement logic to download SpeechBrain model
+        pass
+
+class CoquiSTTModelDownloader(ModelDownloader):
+    def is_present(self) -> bool:
+        # Implement logic to check if Coqui STT model is present
+        pass
+
+    def download(self) -> None:
+        # Implement logic to download Coqui STT model
+        pass
+
+MODEL_DOWNLOADER_CLASSES = {
+    'vosk': VoskModelDownloader,
+    'whisper': WhisperModelDownloader,
+    'speechbrain': SpeechBrainModelDownloader,
+    'coqui-stt': CoquiSTTModelDownloader,
+    # ...
+}
 
 # =============================================================================
 # USER INTERFACE COMPONENTS
@@ -494,7 +493,7 @@ class ModelManagerDialog:
         self.on_download = on_download
         self.downloading = False
         self.selected_model = None
-        self.parent = parent_app  # <-- store the parent app (VoiceTyper)
+        self.parent = parent_app
         self._setup_ui()
         self._refresh_models()
     
@@ -541,9 +540,9 @@ class ModelManagerDialog:
         config = ConfigManager.load()
         active_model = None
         if self.backend == 'vosk':
-            active_model = config.get('vosk_model')
+            active_model = config.get('model')
         elif self.backend == 'whisper':
-            active_model = config.get('whisper_model')
+            active_model = config.get('model')
         backend_models = models_config.get_backend_models(self.backend)
         for model in backend_models:
             model_name = model.get('name', model.get('model', 'Unknown'))
@@ -554,9 +553,16 @@ class ModelManagerDialog:
                 display += f" | {size_str}"
             if notes:
                 display += f" | {notes}"
-            # Check if downloaded
-            model_dir = os.path.join(self.models_dir, model['model'])
-            if os.path.isdir(model_dir):
+            # Unified model downloader usage
+            downloader = None
+            downloader_cls = MODEL_DOWNLOADER_CLASSES.get(self.backend)
+            if downloader_cls:
+                if self.backend == 'whisper':
+                    downloader = downloader_cls(model['model'], self.models_dir)
+                else:
+                    downloader = downloader_cls(model, self.models_dir)
+            is_downloaded = downloader.is_present() if downloader else False
+            if is_downloaded:
                 display += " (downloaded)"
             # Indicate if this is the active model
             if model['model'] == active_model:
@@ -569,9 +575,15 @@ class ModelManagerDialog:
         idx = self.listbox.curselection()
         if idx:
             self.selected_model = self.available_models[idx[0]]
-            model_dir = os.path.join(self.models_dir, self.selected_model['model'])
-            
-            if os.path.isdir(model_dir):
+            downloader = None
+            downloader_cls = MODEL_DOWNLOADER_CLASSES.get(self.backend)
+            if downloader_cls:
+                if self.backend == 'whisper':
+                    downloader = downloader_cls(self.selected_model['model'], self.models_dir)
+                else:
+                    downloader = downloader_cls(self.selected_model, self.models_dir)
+            is_downloaded = downloader.is_present() if downloader else False
+            if is_downloaded:
                 self.download_btn.config(state=tk.NORMAL, text="Select model")
                 self.progress_var.set('Model already downloaded. You can select it.')
             else:
@@ -597,18 +609,13 @@ class ModelManagerDialog:
         self.downloading = True
         self.download_btn.config(state=tk.DISABLED)
         
-        if self.backend == 'vosk':
-            downloader = VoskModelDownloader(
-                self.selected_model, 
-                self.models_dir, 
-                self._on_download_complete
-            )
-        elif self.backend == 'whisper':
-            downloader = WhisperModelDownloader(
-                self.selected_model['model'], 
-                self.models_dir, 
-                self._on_download_complete
-            )
+        downloader = None
+        downloader_cls = MODEL_DOWNLOADER_CLASSES.get(self.backend)
+        if downloader_cls:
+            if self.backend == 'whisper':
+                downloader = downloader_cls(self.selected_model['model'], self.models_dir)
+            else:
+                downloader = downloader_cls(self.selected_model, self.models_dir)
         else:
             self.progress_var.set('Download not implemented for this backend.')
             self.downloading = False
@@ -628,10 +635,7 @@ class ModelManagerDialog:
     def _set_active_model(self, model_name: str) -> None:
         """Set the model as active in configuration and reload backend."""
         config = ConfigManager.load()
-        if self.backend == 'vosk':
-            config['vosk_model'] = model_name
-        elif self.backend == 'whisper':
-            config['whisper_model'] = model_name
+        config['model'] = model_name
         ConfigManager.save(config)
         # Reinitialize backend if possible
         if hasattr(self.parent, '_initialize_backend'):
@@ -756,7 +760,7 @@ class VoskBackend(SpeechRecognitionBackend):
     def _load_model(self) -> None:
         """Load the Vosk model."""
         try:
-            model_name = self.config.get('vosk_model')
+            model_name = self.config.get('model')
             if not model_name:
                 # Use default from models.json
                 model_name = models_config.get_default_model_for_backend('vosk')
@@ -764,7 +768,7 @@ class VoskBackend(SpeechRecognitionBackend):
                     log("No default Vosk model found in models.json", 'error')
                     show_notification(AppConstants.APP_NAME, 'No default Vosk model found in models.json')
                     return
-                self.config['vosk_model'] = model_name  # Optionally update config
+                self.config['model'] = model_name  # Optionally update config
 
             model_path = os.path.join(self.models_dir, model_name)
             if not os.path.isdir(model_path):
@@ -859,7 +863,7 @@ class WhisperBackend(SpeechRecognitionBackend):
         """Load the Whisper model."""
         try:
             import whisper
-            model_name = self.config.get('whisper_model', 'base')
+            model_name = self.config.get('model', 'base')
             self.model = whisper.load_model(model_name, download_root=self.models_dir)
             log(f"Loaded Whisper model: {model_name}")
             
@@ -985,36 +989,39 @@ class VoiceTyper:
         self.tts_engine = pyttsx3.init()
         self.audio_manager = AudioDeviceManager()
         self.config = ConfigManager.load()
-        # Ensure vosk_model is set to default if not present
-        if 'vosk_model' not in self.config or not self.config['vosk_model']:
-            default_vosk_model = models_config.get_default_model_for_backend('vosk')
-            if default_vosk_model:
-                self.config['vosk_model'] = default_vosk_model
-                ConfigManager.save(self.config)
         self.selected_backend = self.config.get('backend', models_config.get_default_backend())
+        # Ensure model matches backend or set to default
+        self._ensure_model_for_backend()
         self.backend_instance = None
         self._initialize_backend()
         self.available_backends = self._get_available_backends()
         log(f"VoiceTyper initialized with backend: {self.selected_backend}")
     
-    def _get_available_backends(self) -> List[str]:
-        """Get list of available backends for current platform."""
-        all_backends = ['vosk', 'whisper', 'speechbrain', 'coqui-stt']
-        if platform.system() != 'Windows':
-            all_backends.append('paddlepaddle')
-        
-        # Filter by what's actually available in models config
-        available = list(set([m['backend'] for m in models_config.all_models]))
-        return [b for b in all_backends if b in available]
-    
+    def _ensure_model_for_backend(self):
+        backend = self.config.get('backend', models_config.get_default_backend())
+        model_name = self.config.get('model')
+        # Check if model matches backend
+        valid = False
+        if model_name:
+            for m in models_config.get_backend_models(backend):
+                if m['model'] == model_name:
+                    valid = True
+                    break
+        if not valid:
+            default_model = models_config.get_default_model_for_backend(backend)
+            if default_model:
+                self.config['model'] = default_model
+                ConfigManager.save(self.config)
+
     def _initialize_backend(self) -> None:
         """Initialize the speech recognition backend."""
+        model_name = self.config.get('model')
         if self.selected_backend == 'vosk':
             models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'vosk')
-            self.backend_instance = VoskBackend(self.config, models_dir)
+            self.backend_instance = VoskBackend({'model': model_name}, models_dir)
         elif self.selected_backend == 'whisper':
             models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'whisper')
-            self.backend_instance = WhisperBackend(self.config, models_dir)
+            self.backend_instance = WhisperBackend({'model': model_name}, models_dir)
         else:
             log(f"Backend {self.selected_backend} not implemented yet", 'warning')
             self.backend_instance = None
@@ -1024,24 +1031,17 @@ class VoiceTyper:
         if backend_name not in self.available_backends:
             log(f"Backend {backend_name} not available", 'error')
             return
-        
-        # Stop current recognition if running
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()
-        
-        # Update configuration
         self.config['backend'] = backend_name
+        # Ensure model matches backend or set to default
+        self._ensure_model_for_backend()
         ConfigManager.save(self.config)
-        
-        # Reinitialize
         self.selected_backend = backend_name
         self._initialize_backend()
-        
         log(f"Switched to backend: {backend_name}")
         show_notification(AppConstants.APP_NAME, f'Switched to backend: {backend_name}')
-        
-        # Restart recognition if it was running
         if was_listening:
             self.toggle_listening()
     
@@ -1124,6 +1124,16 @@ class VoiceTyper:
             self.recognition_thread.join(timeout=2)
         log("VoiceTyper cleanup complete.")
 
+    def _get_available_backends(self) -> List[str]:
+        """Get list of available backends for current platform."""
+        all_backends = ['vosk', 'whisper', 'speechbrain', 'coqui-stt']
+        if platform.system() != 'Windows':
+            all_backends.append('paddlepaddle')
+        
+        # Filter by what's actually available in models config
+        available = list(set([m['backend'] for m in models_config.all_models]))
+        return [b for b in all_backends if b in available]
+
 # =============================================================================
 # SYSTEM TRAY INTEGRATION
 # =============================================================================
@@ -1147,7 +1157,14 @@ class SystemTrayManager:
     def _get_icon_title(self) -> str:
         """Get the icon title showing current backend and model."""
         backend = self.voice_typer.selected_backend
-        # You could add model info here if needed
+        config = self.voice_typer.config
+        model = None
+        if backend == 'vosk':
+            model = config.get('model')
+        elif backend == 'whisper':
+            model = config.get('model')
+        if model:
+            return f"{AppConstants.APP_NAME} ({backend}: {model})"
         return f"{AppConstants.APP_NAME} ({backend})"
     
     def _build_menu(self) -> pystray.Menu:
@@ -1287,10 +1304,23 @@ class SystemTrayManager:
             log(f"Error opening config folder: {e}", 'error')
     
     def _on_exit(self, icon, item) -> None:
-        """Handle application exit."""
+        """Handle application exit with warm shutdown and download check."""
+        # Check for any open ModelManagerDialog with download in progress
+        import tkinter.messagebox
+        for w in self.indicator.root.winfo_children():
+            if hasattr(w, 'downloading') and getattr(w, 'downloading', False):
+                if not tkinter.messagebox.askyesno("Download in progress", "A model download is in progress. Do you want to stop the download and exit?"):
+                    return  # Abort exit
         icon.stop()
         self.indicator.destroy()
         self.voice_typer.cleanup()
+        # Join all non-daemon threads except the main thread
+        import threading, time
+        main_thread = threading.current_thread()
+        for t in threading.enumerate():
+            if t is not main_thread and t.is_alive() and not t.daemon:
+                t.join(timeout=2)
+        time.sleep(0.2)  # Give a moment for cleanup
         os._exit(0)
     
     def run(self) -> None:
@@ -1341,6 +1371,28 @@ def main() -> None:
     if not os.path.isfile(AppConstants.FIRST_RUN_FLAG):
         tutorial = TutorialManager(indicator.root, tray_manager.icon)
         indicator.root.after(1000, tutorial.start)
+    
+    # Ensure default model for every backend is present
+    for backend in set(m['backend'] for m in models_config.all_models):
+        default_model = models_config.get_default_model_for_backend(backend)
+        if not default_model:
+            continue
+        model_dir = os.path.join(AppConstants.USER_MODELS_DIR, backend, default_model)
+        if not os.path.isdir(model_dir):
+            try:
+                download_model = None
+                for m in models_config.get_backend_models(backend):
+                    if m['model'] == default_model:
+                        download_model = m
+                        break
+                if download_model:
+                    if backend == 'vosk':
+                        VoskModelDownloader(download_model, os.path.join(AppConstants.USER_MODELS_DIR, backend)).download()
+                    elif backend == 'whisper':
+                        WhisperModelDownloader(download_model['model'], os.path.join(AppConstants.USER_MODELS_DIR, backend)).download()
+                    # Add similar logic for other backends if needed
+            except Exception as e:
+                log(f"Error downloading {backend} default model: {e}", 'error')
     
     # Start system tray in separate thread
     tray_thread = threading.Thread(target=tray_manager.run, daemon=True)
