@@ -33,6 +33,7 @@ import string
 import logging
 import abc
 from typing import Optional, Dict, List, Callable, Any, Tuple
+import sqlite3
 
 # Third-party imports - Core functionality
 import pyautogui
@@ -166,29 +167,62 @@ initialize_user_directory()
 # =============================================================================
 
 class ConfigManager:
-    """Manages application configuration persistence."""
+    """Manages application configuration persistence using SQLite."""
+    DB_PATH = os.path.expanduser('~/.instyper/config.db')
+    TABLE_NAME = 'config'
     
+    DEFAULT_CONFIG = {
+        'mic_index': None,  # Default microphone
+        'backend': 'vosk',  # Default backend
+        'model': None,      # Will be set to default model for backend
+        'lang': 'en'       # Default language
+    }
+
+    @staticmethod
+    def _get_conn():
+        os.makedirs(os.path.dirname(ConfigManager.DB_PATH), exist_ok=True)
+        conn = sqlite3.connect(ConfigManager.DB_PATH)
+        conn.execute(f"CREATE TABLE IF NOT EXISTS {ConfigManager.TABLE_NAME} (key TEXT PRIMARY KEY, value TEXT)")
+        return conn
+
     @staticmethod
     def load() -> Dict[str, Any]:
-        """Load configuration from file."""
-        if os.path.isfile(AppConstants.CONFIG_PATH):
+        """Load configuration from SQLite database."""
+        conn = ConfigManager._get_conn()
+        cur = conn.cursor()
+        cur.execute(f"SELECT key, value FROM {ConfigManager.TABLE_NAME}")
+        rows = cur.fetchall()
+        config = ConfigManager.DEFAULT_CONFIG.copy()  # Start with defaults
+        for k, v in rows:
             try:
-                with open(AppConstants.CONFIG_PATH, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception as e:
-                log(f"Error loading config: {e}", 'warning')
-                return {}
-        return {}
-    
+                config[k] = json.loads(v)
+            except Exception:
+                config[k] = v
+        conn.close()
+        return config
+
     @staticmethod
     def save(data: Dict[str, Any]) -> None:
-        """Save configuration to file."""
-        try:
-            with open(AppConstants.CONFIG_PATH, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2)
-            log(f"Config saved: {list(data.keys())}")
-        except Exception as e:
-            log(f"Error saving config: {e}", 'error')
+        """Save configuration to SQLite database."""
+        conn = ConfigManager._get_conn()
+        cur = conn.cursor()
+        
+        # Ensure we're only updating valid config keys
+        valid_data = {k: v for k, v in data.items() if k in ConfigManager.DEFAULT_CONFIG}
+        
+        for k, v in valid_data.items():
+            cur.execute(f"REPLACE INTO {ConfigManager.TABLE_NAME} (key, value) VALUES (?, ?)", 
+                       (k, json.dumps(v)))
+        
+        conn.commit()
+        conn.close()
+        log(f"Config saved (sqlite): {list(valid_data.keys())}")
+
+    @staticmethod
+    def reset() -> None:
+        """Reset configuration to defaults."""
+        ConfigManager.save(ConfigManager.DEFAULT_CONFIG)
+        log("Config reset to defaults")
 
 class ModelsConfig:
     """Manages models configuration from models.json."""
@@ -634,13 +668,10 @@ class ModelManagerDialog:
     
     def _set_active_model(self, model_name: str) -> None:
         """Set the model as active in configuration and reload backend."""
-        config = ConfigManager.load()
-        config['model'] = model_name
-        ConfigManager.save(config)
-        # Reinitialize backend if possible
-        if hasattr(self.parent, '_initialize_backend'):
-            self.parent.config = config
-            self.parent._initialize_backend()
+        if hasattr(self.parent, 'set_model'):
+            self.parent.set_model(model_name)
+            show_notification(AppConstants.APP_NAME, f"Model '{model_name}' is now set as active.")
+            self.top.destroy()
 
 class TutorialManager:
     """Manages the first-run tutorial for new users."""
@@ -988,9 +1019,17 @@ class VoiceTyper:
         self.stop_event = threading.Event()
         self.tts_engine = pyttsx3.init()
         self.audio_manager = AudioDeviceManager()
+        
+        # Load configuration
         self.config = ConfigManager.load()
+        
+        # Set microphone from config
+        mic_index = self.config.get('mic_index')
+        if mic_index is not None:
+            self.audio_manager.set_mic_index(mic_index)
+        
+        # Initialize backend and model
         self.selected_backend = self.config.get('backend', models_config.get_default_backend())
-        # Ensure model matches backend or set to default
         self._ensure_model_for_backend()
         self.backend_instance = None
         self._initialize_backend()
@@ -998,50 +1037,47 @@ class VoiceTyper:
         log(f"VoiceTyper initialized with backend: {self.selected_backend}")
     
     def _ensure_model_for_backend(self):
-        backend = self.config.get('backend', models_config.get_default_backend())
+        """Ensure the selected model is valid for the current backend."""
         model_name = self.config.get('model')
         # Check if model matches backend
         valid = False
         if model_name:
-            for m in models_config.get_backend_models(backend):
+            for m in models_config.get_backend_models(self.selected_backend):
                 if m['model'] == model_name:
                     valid = True
                     break
         if not valid:
-            default_model = models_config.get_default_model_for_backend(backend)
+            default_model = models_config.get_default_model_for_backend(self.selected_backend)
             if default_model:
                 self.config['model'] = default_model
                 ConfigManager.save(self.config)
-
-    def _initialize_backend(self) -> None:
-        """Initialize the speech recognition backend."""
-        model_name = self.config.get('model')
-        if self.selected_backend == 'vosk':
-            models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'vosk')
-            self.backend_instance = VoskBackend({'model': model_name}, models_dir)
-        elif self.selected_backend == 'whisper':
-            models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'whisper')
-            self.backend_instance = WhisperBackend({'model': model_name}, models_dir)
-        else:
-            log(f"Backend {self.selected_backend} not implemented yet", 'warning')
-            self.backend_instance = None
     
     def set_backend(self, backend_name: str) -> None:
         """Change the speech recognition backend."""
         if backend_name not in self.available_backends:
             log(f"Backend {backend_name} not available", 'error')
             return
+        
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()
+        
+        # Update backend in config
         self.config['backend'] = backend_name
+        self.selected_backend = backend_name
+        
         # Ensure model matches backend or set to default
         self._ensure_model_for_backend()
+        
+        # Save config
         ConfigManager.save(self.config)
-        self.selected_backend = backend_name
+        
+        # Initialize new backend
         self._initialize_backend()
+        
         log(f"Switched to backend: {backend_name}")
         show_notification(AppConstants.APP_NAME, f'Switched to backend: {backend_name}')
+        
         if was_listening:
             self.toggle_listening()
     
@@ -1051,9 +1087,26 @@ class VoiceTyper:
         if was_listening:
             self.toggle_listening()
         
+        # Update microphone selection
         self.audio_manager.set_mic_index(mic_index)
         self.config['mic_index'] = mic_index
         ConfigManager.save(self.config)
+        
+        if was_listening:
+            self.toggle_listening()
+    
+    def set_model(self, model_name: str) -> None:
+        """Set the model for the current backend."""
+        was_listening = self.is_listening
+        if was_listening:
+            self.toggle_listening()
+        
+        # Update model in config
+        self.config['model'] = model_name
+        ConfigManager.save(self.config)
+        
+        # Reinitialize backend with new model
+        self._initialize_backend()
         
         if was_listening:
             self.toggle_listening()
@@ -1133,6 +1186,19 @@ class VoiceTyper:
         # Filter by what's actually available in models config
         available = list(set([m['backend'] for m in models_config.all_models]))
         return [b for b in all_backends if b in available]
+
+    def _initialize_backend(self) -> None:
+        """Initialize the speech recognition backend."""
+        model_name = self.config.get('model')
+        if self.selected_backend == 'vosk':
+            models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'vosk')
+            self.backend_instance = VoskBackend({'model': model_name}, models_dir)
+        elif self.selected_backend == 'whisper':
+            models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'whisper')
+            self.backend_instance = WhisperBackend({'model': model_name}, models_dir)
+        else:
+            log(f"Backend {self.selected_backend} not implemented yet", 'warning')
+            self.backend_instance = None
 
 # =============================================================================
 # SYSTEM TRAY INTEGRATION
@@ -1280,8 +1346,7 @@ class SystemTrayManager:
         """Reset application settings."""
         if messagebox.askyesno("Confirm", "Reset all settings?"):
             try:
-                if os.path.isfile(AppConstants.CONFIG_PATH):
-                    os.remove(AppConstants.CONFIG_PATH)
+                ConfigManager.reset()
                 show_notification(AppConstants.APP_NAME, 'Settings reset successfully.')
             except Exception as e:
                 log(f"Error resetting settings: {e}", 'error')
