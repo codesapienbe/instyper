@@ -29,6 +29,7 @@ import tkinter.messagebox
 import logging
 import abc
 import string
+import pynput
 
 # Setup logging to file and console
 LOG_PATH = os.path.expanduser('~/.instyper/instyper.log')
@@ -144,8 +145,8 @@ class ListeningIndicator:
         self.root.overrideredirect(True)
         self.root.attributes('-topmost', True)
         self.root.configure(bg='#1DE9B6')
-        self.label = tk.Label(self.root, text='...', font=('Arial', 18, 'bold'), fg='#00BFAE', bg='#1DE9B6')
-        self.label.pack(ipadx=8, ipady=2)
+        self.label = tk.Label(self.root, text='...', font=('Arial', 9, 'bold'), fg='#00BFAE', bg='#1DE9B6')
+        self.label.pack(ipadx=4, ipady=1)
         self.root.withdraw()
         self.update_position()
     def update_position(self):
@@ -223,17 +224,18 @@ class ModelManagerDialog:
                 with open('@models.json', 'r', encoding='utf-8') as f:
                     models = json.load(f)['models']
                 for m in models:
+                    if m.get('backend') != 'vosk':
+                        continue
                     name = m.get('name')
-                    lang = m.get('lang', '')
-                    size = m.get('filesize', None)
+                    model_dir = os.path.join(self.models_dir, m['model'])
+                    is_downloaded = os.path.isdir(model_dir)
+                    size = m.get('size', None)
                     size_str = human_size(size)
                     notes = m.get('notes', '')
-                    model_dir = os.path.join(self.models_dir, name)
-                    is_downloaded = os.path.isdir(model_dir)
-                    display = f"{name} | {lang} | {size_str} | {notes}"
+                    display = f"{name} | {size_str} | {notes}"
                     if is_downloaded:
                         display += " (downloaded)"
-                        self.downloaded_models.add(name)
+                        self.downloaded_models.add(m['model'])
                     self.listbox.insert(tk.END, display)
                     self.available_models.append(m)
             except Exception as e:
@@ -257,10 +259,10 @@ class ModelManagerDialog:
         idx = self.listbox.curselection()
         if idx:
             model = self.available_models[idx[0]]
-            name = model.get('name', model) if isinstance(model, dict) else model
-            if name in self.downloaded_models:
+            model_id = model.get('model', model) if isinstance(model, dict) else model
+            if model_id in self.downloaded_models:
                 self.selected_model = model
-                self.selected_downloaded_model = name
+                self.selected_downloaded_model = model_id
                 self.progress_var.set('Model already downloaded. You can select it.')
                 self.download_btn.config(state=tk.NORMAL, text="Select model")
             else:
@@ -286,22 +288,19 @@ class ModelManagerDialog:
         self.download_btn.config(state=tk.DISABLED)
         threading.Thread(target=self._download_model_thread, daemon=True).start()
 
-    def set_active_model(self, name):
-        # For Vosk, set the language in config to match the selected model
+    def set_active_model(self, model_id):
         if self.backend == 'vosk':
-            # Find the language code for the selected model
-            from .. import VoiceTyper  # relative import for context
+            from .. import VoiceTyper
             for lang_code, model_dir in VoiceTyper.LANG_MODELS.items():
-                if model_dir == name:
+                if model_dir == model_id:
                     config = load_config()
                     config['lang'] = lang_code
                     config.pop('custom_vosk_model', None)
                     save_config(config)
                     break
         elif self.backend == 'whisper':
-            # For Whisper, set the model in config if needed (extend as needed)
             config = load_config()
-            config['whisper_model'] = name
+            config['whisper_model'] = model_id
             save_config(config)
         # Optionally, trigger a reload in the main app if needed
 
@@ -475,6 +474,13 @@ class VoiceTyper:
         self.LANG_MODELS = {m['id'].upper(): m['model'] for m in get_backend_models('vosk')}
         self.LANG_UI_NAMES = {m['id'].upper(): m['name'] for m in get_backend_models('vosk')}
         self.MODEL_META = {m['model']: m for m in get_backend_models('vosk')}
+        # Build feedback for all languages
+        self.LANG_LOCAL_FEEDBACK = {}
+        for code, name in self.LANG_UI_NAMES.items():
+            if code == 'TR':
+                self.LANG_LOCAL_FEEDBACK[code] = 'Dil Türkçe olarak değiştirildi.'
+            else:
+                self.LANG_LOCAL_FEEDBACK[code] = f'Language is changed to {name}.'
         if self.selected_backend == 'vosk' and self.selected_lang not in self.LANG_MODELS:
             log(f"Language {self.selected_lang} not supported. Defaulting to {default_lang}.")
             self.selected_lang = default_lang
@@ -573,7 +579,13 @@ class VoiceTyper:
             except Exception as e:
                 show_notification('Instant Typer', f'Error loading model: {e}')
             log(f"Switched to Vosk language: {lang_code}")
-            self.tts_engine.say(f"Language changed")
+            # --- Improved voice feedback ---
+            lang_code_upper = lang_code.upper()
+            feedback = self.LANG_LOCAL_FEEDBACK.get(lang_code_upper)
+            if not feedback:
+                lang_name = self.LANG_UI_NAMES.get(lang_code_upper, lang_code_upper)
+                feedback = f'Language is changed to {lang_name}.'
+            self.tts_engine.say(feedback)
             self.tts_engine.runAndWait()
             return
         # Whisper: switch model if backend is whisper
@@ -607,20 +619,17 @@ class VoiceTyper:
         if backend_name not in self.BACKENDS:
             log(f"Backend {backend_name} not supported.")
             return
-        # Use default model for backend if not set
         config = load_config()
         if backend_name == 'vosk':
             default_lang = MODEL_DEFAULTS.get('vosk', 'en').upper()
-            if 'lang' not in config or config['lang'] not in self.LANG_MODELS:
-                config['lang'] = default_lang
-                save_config(config)
-                self.set_language(default_lang)
+            config['lang'] = default_lang
+            save_config(config)
+            self.set_language(config['lang'])
         elif backend_name == 'whisper':
             default_model = MODEL_DEFAULTS.get('whisper', 'tiny')
-            if 'whisper_model' not in config:
-                config['whisper_model'] = default_model
-                save_config(config)
-        # Add similar logic for other backends if needed
+            config['whisper_model'] = default_model
+            save_config(config)
+        # ... existing code ...
         save_config({'backend': backend_name, 'lang': config.get('lang', MODEL_DEFAULTS.get('vosk', 'en').upper()), 'mic_index': self.selected_mic_index})
         was_listening = self.is_listening
         if was_listening:
@@ -636,7 +645,6 @@ class VoiceTyper:
             self.toggle_listening()  # Restart
         self.refresh_menu()
         self.update_icon_title()
-        # Check if model is available after switching backend
         if not self.is_model_available():
             self.notify_and_prompt_model_download(backend_name)
 
@@ -1188,6 +1196,19 @@ def main():
     voice_typer = VoiceTyper(indicator=indicator)
     atexit.register(voice_typer.cleanup)
 
+    # --- Keyboard shortcut for toggling voice typing (GlobalHotKeys) ---
+    def on_hotkey():
+        voice_typer.toggle_listening()
+        show_notification('Instant Typer', 'Voice typing toggled by keyboard shortcut')
+
+    def keyboard_listener():
+        from pynput.keyboard import GlobalHotKeys
+        # Use <ctrl>+<alt>+<space> as the global hotkey
+        hotkey = '<ctrl>+<alt>+<space>'
+        with GlobalHotKeys({hotkey: on_hotkey}) as h:
+            h.join()
+    threading.Thread(target=keyboard_listener, daemon=True).start()
+
     # Always ensure default models are present before starting main UI
     # Vosk default
     vosk_default_model = MODEL_DEFAULTS.get('vosk', 'en')
@@ -1517,6 +1538,16 @@ def main():
             pystray.MenuItem('Reset User Settings', lambda icon, item: reset_user_settings()),
             pystray.MenuItem('Restart App', lambda icon, item: restart_app()),
         )
+
+    def toggle_large_models(icon, item):
+        voice_typer.prefer_large_models = not voice_typer.prefer_large_models
+        save_config({'prefer_large_models': voice_typer.prefer_large_models, 'backend': voice_typer.selected_backend, 'lang': voice_typer.selected_lang, 'mic_index': voice_typer.selected_mic_index})
+        show_notification('Instant Typer', f'Prefer large models: {voice_typer.prefer_large_models}')
+        voice_typer.set_backend(voice_typer.selected_backend)
+        refresh_menu()
+
+    def is_large_models_checked(item):
+        return getattr(voice_typer, 'prefer_large_models', False)
 
     def build_menu():
         return pystray.Menu(

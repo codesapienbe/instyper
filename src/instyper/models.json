@@ -7,7 +7,7 @@
     {
       "backend": "vosk",
       "id": "en",
-      "name": "English",
+      "name": "English-Small",
       "model": "vosk-model-small-en-us-0.15",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip",
       "size": 50000000,
@@ -16,7 +16,7 @@
     {
       "backend": "vosk",
       "id": "de",
-      "name": "German",
+      "name": "German-Small",
       "model": "vosk-model-small-de-zamia-0.3",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-de-zamia-0.3.zip",
       "size": 48000000,
@@ -25,7 +25,7 @@
     {
       "backend": "vosk",
       "id": "nl",
-      "name": "Dutch",
+      "name": "Dutch-Small",
       "model": "vosk-model-small-nl-0.22",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-nl-0.22.zip",
       "size": 47000000,
@@ -34,7 +34,7 @@
     {
       "backend": "vosk",
       "id": "fr",
-      "name": "French",
+      "name": "French-Small",
       "model": "vosk-model-small-fr-0.22",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-fr-0.22.zip",
       "size": 46000000,
@@ -43,7 +43,7 @@
     {
       "backend": "vosk",
       "id": "tr",
-      "name": "Turkish",
+      "name": "Turkish-Small",
       "model": "vosk-model-small-tr-0.3",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-tr-0.3.zip",
       "size": 48000000,
@@ -52,11 +52,20 @@
     {
       "backend": "vosk",
       "id": "es",
-      "name": "Spanish",
+      "name": "Spanish-Small",
       "model": "vosk-model-small-es-0.42",
       "url": "https://alphacephei.com/vosk/models/vosk-model-small-es-0.42.zip",
       "size": 47000000,
       "notes": "Small Spanish model"
+    },
+    {
+      "backend": "vosk",
+      "id": "en-large",
+      "name": "English-Large",
+      "model": "vosk-model-en-us-0.42-gigaspeech",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-en-us-0.42-gigaspeech.zip",
+      "size": 2400000000,
+      "notes": "Large English model (GigaSpeech)"
     },
     {
       "backend": "whisper",
@@ -101,7 +110,7 @@
       "model": "small",
       "url": "https://huggingface.co/openai/whisper-small/resolve/main/whisper-small.pt",
       "size": 244000000,
-      "notes": "Small Whisper model (English + multilingual)"
+      "notes": "Small Whisper model (Multilingual)"
     },
     {
       "backend": "whisper",
@@ -119,7 +128,7 @@
       "model": "medium",
       "url": "https://huggingface.co/openai/whisper-medium/resolve/main/whisper-medium.pt",
       "size": 769000000,
-      "notes": "Medium Whisper model (English + multilingual)"
+      "notes": "Medium Whisper model (Multilingual)"
     },
     {
       "backend": "whisper",
@@ -137,7 +146,7 @@
       "model": "large",
       "url": "https://huggingface.co/openai/whisper-large/resolve/main/whisper-large.pt",
       "size": 1550000000,
-      "notes": "Large Whisper model (English + multilingual)"
+      "notes": "Large Whisper model (Multilingual)"
     },
     {
       "backend": "whisper",
@@ -146,7 +155,7 @@
       "model": "large-v2",
       "url": "https://huggingface.co/openai/whisper-large-v2/resolve/main/whisper-large-v2.pt",
       "size": 1550000000,
-      "notes": "Large-v2 Whisper model (English + multilingual)"
+      "notes": "Large-v2 Whisper model (Multilingual)"
     },
     {
       "backend": "whisper",
@@ -155,7 +164,7 @@
       "model": "large-v3",
       "url": "https://huggingface.co/openai/whisper-large-v3/resolve/main/whisper-large-v3.pt",
       "size": 1550000000,
-      "notes": "Large-v3 Whisper model (English + multilingual)"
+      "notes": "Large-v3 Whisper model (Multilingual)"
     },
     {
       "backend": "whisper",
@@ -164,7 +173,16 @@
       "model": "turbo",
       "url": "https://huggingface.co/openai/whisper-turbo/resolve/main/whisper-turbo.pt",
       "size": 1550000000,
-      "notes": "Turbo Whisper model (English + multilingual)"
+      "notes": "Turbo Whisper model (Multilingual)"
+    },
+    {
+      "backend": "vosk",
+      "id": "nl-medium",
+      "name": "Dutch-Medium",
+      "model": "vosk-model-nl-spraakherkenning-0.6",
+      "url": "https://alphacephei.com/vosk/models/vosk-model-nl-spraakherkenning-0.6.zip",
+      "size": 860000000,
+      "notes": "Medium Dutch model from Kaldi_NL (20.40 (cv test) 32.64 (tv) 17.73 (mls) 19.96 (voxpopuli))"
     }
   ]
 } 
