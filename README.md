@@ -2,6 +2,13 @@
 
 Instyper is a cross-platform voice typing taskbar application.
 
+**Supports multiple speech recognition backends:**
+- Vosk (offline, multilingual)
+- Whisper (OpenAI, multilingual)
+- **SpeechBrain (open-source, multilingual, HuggingFace models)**
+- Coqui STT (experimental)
+- PaddlePaddle (Linux only, experimental)
+
 ---
 
 ## ⚠️ Prerequisites & Setup
@@ -105,11 +112,18 @@ To ensure transparency and user control, you must manually install all prerequis
    - Sets up basic English voice typing
    - Remembers your preferences between sessions
 
-3. **Add Languages** (Optional)  
-   Want to type in French, Dutch, or other languages?
-   1. Get models from [Vosk Models](https://alphacephei.com/vosk/models)
-   2. Unzip into `~/instyper/models` (we'll create this automatically)
-   3. Restart Instyper - new languages appear like magic!
+3. **Add Languages & Models** (Optional)  
+   Want to type in French, Dutch, or other languages? Or try a different backend?
+   1. Get models from [Vosk Models](https://alphacephei.com/vosk/models), [OpenAI Whisper](https://github.com/openai/whisper), or **SpeechBrain** (see [SpeechBrain HuggingFace](https://huggingface.co/speechbrain)).
+   2. Unzip or place them into `~/instyper/models/<backend>/` (e.g. `~/.instyper/models/speechbrain/`).
+   3. Restart Instyper - new languages and backends appear like magic!
+
+### 🧩 SpeechBrain Backend Support
+
+- SpeechBrain is a powerful open-source speech recognition toolkit with many pre-trained models available on HuggingFace.
+- You can download and manage SpeechBrain models from the Instyper model manager, just like Vosk and Whisper.
+- To use SpeechBrain, select it as your backend from the tray menu, then pick or download a model for your language.
+- For more models, visit [SpeechBrain on HuggingFace](https://huggingface.co/speechbrain).
 
 ### ⚡ New: Non-Blocking Model & Backend Switching
 

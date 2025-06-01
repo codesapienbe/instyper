@@ -31,7 +31,8 @@ dependencies = [
     "openai-whisper==20240930",
     "cryptography",
     "celery",
-    "joblib"
+    "joblib",
+    "huggingface_hub"
 ]
 
 [project.scripts]

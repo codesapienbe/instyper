@@ -72,6 +72,67 @@ import requests
 # Celery integration
 from celery import Celery
 
+# SpeechBrain integration
+import speechbrain as sb
+
+# Add after imports, before classes
+import tkinter.simpledialog
+try:
+    from huggingface_hub import login as hf_login
+except ImportError:
+    hf_login = None
+
+_hf_token = None  # Store in memory for session only
+
+# Path to user .env
+USER_ENV_PATH = os.path.expanduser('~/.instyper/.env')
+
+def prompt_huggingface_token():
+    return tkinter.simpledialog.askstring(
+        "HuggingFace Login",
+        "Enter your HuggingFace token (see https://huggingface.co/settings/tokens):",
+        show='*'
+    )
+
+def get_hf_token_from_env():
+    if not os.path.isfile(USER_ENV_PATH):
+        return None
+    with open(USER_ENV_PATH, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip().startswith('HF_READONLY_TOKEN='):
+                return line.strip().split('=', 1)[1]
+    return None
+
+def save_hf_token_to_env(token):
+    # Only add if not present
+    if not os.path.isdir(os.path.dirname(USER_ENV_PATH)):
+        os.makedirs(os.path.dirname(USER_ENV_PATH), exist_ok=True)
+    if os.path.isfile(USER_ENV_PATH):
+        with open(USER_ENV_PATH, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip().startswith('HF_READONLY_TOKEN='):
+                    return  # Already present
+    with open(USER_ENV_PATH, 'a', encoding='utf-8') as f:
+        f.write(f'\nHF_READONLY_TOKEN={token}\n')
+
+def huggingface_login(token=None):
+    global _hf_token
+    if hf_login is None:
+        show_notification(AppConstants.APP_NAME, "huggingface_hub not installed.")
+        return False
+    if token is None:
+        token = prompt_huggingface_token()
+    if token:
+        try:
+            hf_login(token=token)
+            _hf_token = token
+            save_hf_token_to_env(token)
+            show_notification(AppConstants.APP_NAME, "HuggingFace login successful.")
+            return True
+        except Exception as e:
+            show_notification(AppConstants.APP_NAME, f"HuggingFace login failed: {e}")
+    return False
+
 # =============================================================================
 # CONSTANTS AND CONFIGURATION
 # =============================================================================
@@ -488,12 +549,52 @@ class WhisperModelDownloader(ModelDownloader):
 
 class SpeechBrainModelDownloader(ModelDownloader):
     def is_present(self) -> bool:
-        # Implement logic to check if SpeechBrain model is present
-        pass
+        model_name = self.model_info.get('model')
+        model_path = os.path.join(self.models_dir, model_name)
+        # Check for required files
+        required_files = ['hyperparams.yaml', 'pretrained_model.ckpt']
+        missing = [f for f in required_files if not os.path.isfile(os.path.join(model_path, f))]
+        if missing:
+            log(f"SpeechBrain model missing files: {missing} in {model_path}", 'error')
+            return False
+        return True
 
     def download(self) -> None:
-        # Implement logic to download SpeechBrain model
-        pass
+        def download_thread():
+            try:
+                from huggingface_hub import snapshot_download
+                repo_id = self.model_info.get('repo_id')
+                model_name = self.model_info.get('model')
+                model_path = os.path.join(self.models_dir, model_name)
+                if not repo_id or not model_name:
+                    self._notify_progress('Invalid model info: missing repo_id or model name.')
+                    return
+                os.makedirs(model_path, exist_ok=True)
+                self._notify_progress(f"Downloading SpeechBrain model {repo_id} ...")
+                try:
+                    snapshot_download(repo_id=repo_id, local_dir=model_path, repo_type="model", local_dir_use_symlinks=False)
+                except Exception as e:
+                    if "401" in str(e) or "authentication" in str(e).lower():
+                        # Prompt for login and retry
+                        if huggingface_login():
+                            try:
+                                snapshot_download(repo_id=repo_id, local_dir=model_path, repo_type="model", local_dir_use_symlinks=False)
+                            except Exception as e2:
+                                self._notify_progress(f"Error downloading {model_name} after login: {e2}")
+                                log(f"Error downloading SpeechBrain model after login: {e2}", 'error')
+                                return
+                        else:
+                            self._notify_progress("HuggingFace login failed or cancelled.")
+                            return
+                    else:
+                        raise
+                self._notify_progress(f"Model {model_name} ready!")
+                if self.on_done:
+                    self.on_done()
+            except Exception as e:
+                self._notify_progress(f"Error downloading {model_name}: {e}\nYou can also manually run: huggingface-cli repo clone {repo_id} {model_path}")
+                log(f"Error downloading SpeechBrain model: {e}", 'error')
+        threading.Thread(target=download_thread, daemon=True).start()
 
 class CoquiSTTModelDownloader(ModelDownloader):
     def is_present(self) -> bool:
@@ -819,7 +920,60 @@ class SpeechRecognitionBackend(abc.ABC):
                         mic_index: Optional[int], 
                         indicator: Optional[ListeningIndicator]) -> None:
         """Main speech recognition loop."""
-        pass
+        try:
+            # Initialize audio recording
+            import sounddevice as sd
+            import wave
+            import tempfile
+            
+            # Get audio parameters
+            sample_rate = 16000  # Standard for speech recognition
+            channels = 1  # Mono audio
+            
+            # Record audio until stop_event is set
+            frames = []
+            with sd.InputStream(samplerate=sample_rate, channels=channels, 
+                              device=mic_index, dtype='int16') as stream:
+                if indicator:
+                    indicator.show()
+                
+                while not stop_event.is_set():
+                    audio_chunk, _ = stream.read(1024)
+                    frames.append(audio_chunk)
+            
+            if indicator:
+                indicator.hide()
+            
+            if not frames:
+                return
+            
+            # Save to temporary WAV file
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                wav_path = temp_file.name
+                with wave.open(wav_path, 'wb') as wf:
+                    wf.setnchannels(channels)
+                    wf.setsampwidth(2)  # 16-bit audio
+                    wf.setframerate(sample_rate)
+                    wf.writeframes(b''.join(frames))
+            
+            try:
+                # Transcribe the audio file
+                text = self.model.transcribe_file(wav_path)
+                
+                if text:
+                    # Type the text using clipboard/pyautogui
+                    pyperclip.copy(text)
+                    pyautogui.hotkey('ctrl', 'v')
+            
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(wav_path)
+                except:
+                    pass
+                    
+        except Exception as e:
+            log(f"Error in speech recognition: {e}", 'error')
 
 class VoskBackend(SpeechRecognitionBackend):
     """Vosk speech recognition backend."""
@@ -1059,6 +1213,75 @@ class WhisperBackend(SpeechRecognitionBackend):
         if indicator:
             indicator.label.config(text='Listening...')
 
+class SpeechBrainBackend(SpeechRecognitionBackend):
+    def __init__(self, config: Dict[str, Any], models_dir: str):
+        super().__init__(config, models_dir)
+        self.model = None
+        self._load_model()
+
+    def _load_model(self):
+        try:
+            import speechbrain as sb
+            model_name = self.config.get('model')
+            model_path = os.path.join(self.models_dir, model_name)
+            # Check for required files
+            required_files = ['hyperparams.yaml', 'pretrained_model.ckpt']
+            missing = [f for f in required_files if not os.path.isfile(os.path.join(model_path, f))]
+            if missing:
+                # Try to auto-download if repo_id is present in model config
+                repo_id = None
+                # Find repo_id from models_config
+                for m in models_config.get_backend_models('speechbrain'):
+                    if m['model'] == model_name:
+                        repo_id = m.get('repo_id')
+                        break
+                if repo_id:
+                    log(f"Auto-downloading SpeechBrain model {repo_id} to {model_path} ...", 'info')
+                    try:
+                        from huggingface_hub import snapshot_download
+                        if self.config.get('indicator'):
+                            self.config['indicator'].label.config(text=f"Downloading {repo_id}...")
+                            self.config['indicator'].show()
+                        snapshot_download(repo_id=repo_id, local_dir=model_path, repo_type="model", local_dir_use_symlinks=False)
+                        log(f"SpeechBrain model {repo_id} downloaded.", 'info')
+                        # Check again for required files
+                        missing = [f for f in required_files if not os.path.isfile(os.path.join(model_path, f))]
+                        if missing:
+                            raise FileNotFoundError(
+                                f"SpeechBrain model still missing files after download: {missing} in {model_path}. "
+                                "Check the HuggingFace repo or download manually."
+                            )
+                    except Exception as e:
+                        log(f"Auto-download failed: {e}", 'error')
+                        raise FileNotFoundError(
+                            f"SpeechBrain model missing files: {missing} in {model_path}. "
+                            f"Auto-download failed: {e}\nYou can manually run: huggingface-cli repo clone {repo_id} {model_path}"
+                        )
+                    finally:
+                        if self.config.get('indicator'):
+                            self.config['indicator'].label.config(text='Ready')
+                            self.config['indicator'].hide()
+                else:
+                    raise FileNotFoundError(
+                        f"SpeechBrain model missing files: {missing} in {model_path}. "
+                        "No repo_id found in model config. Please add 'repo_id' to your models.json or download the full model folder from HuggingFace."
+                    )
+            self.model = sb.pretrained.EncoderDecoderASR.from_hparams(
+                source=model_path, savedir=model_path
+            )
+            log(f"Loaded SpeechBrain model: {model_path}")
+        except Exception as e:
+            log(f"Error loading SpeechBrain model: {e}", 'error')
+            self.model = None
+
+    def is_available(self) -> bool:
+        return self.model is not None
+
+    def recognize_speech(self, stop_event: threading.Event, mic_index: Optional[int], indicator: Optional[ListeningIndicator]) -> None:
+        # Similar to Vosk/Whisper: record audio, transcribe, type text
+        # Use self.model.transcribe_file or self.model.transcribe_batch
+        pass  # We'll fill this in the next step
+
 # =============================================================================
 # MAIN APPLICATION LOGIC
 # =============================================================================
@@ -1073,17 +1296,42 @@ class VoiceTyper:
         self.stop_event = threading.Event()
         self.tts_engine = pyttsx3.init()
         self.audio_manager = AudioDeviceManager()
-        
         # Load configuration
         self.config = ConfigManager.load()
-        
         # Set microphone from config
         mic_index = self.config.get('mic_index')
         if mic_index is not None:
             self.audio_manager.set_mic_index(mic_index)
-        
+        # --- Startup backend/model validity check and fallback ---
+        backend = self.config.get('backend')
+        model = self.config.get('model')
+        valid_backend = backend in [m['backend'] for m in models_config.all_models]
+        valid_model = False
+        if valid_backend and model:
+            for m in models_config.get_backend_models(backend):
+                if m['model'] == model:
+                    valid_model = True
+                    break
+        if not (valid_backend and valid_model):
+            # Fallback to default backend/model
+            log(f"Invalid or missing backend/model in config (backend={backend}, model={model}), falling back to default.", 'warning')
+            default_backend = 'vosk'
+            default_model = models_config.get_default_model_for_backend(default_backend) or 'vosk-model-small-en-us-0.15'
+            self.config['backend'] = default_backend
+            self.config['model'] = default_model
+            ConfigManager.save(self.config)
+            log(f"Fell back to backend={default_backend}, model={default_model}", 'info')
+            show_notification(AppConstants.APP_NAME, f"Fell back to default backend: {default_backend}, model: {default_model}")
         # Initialize backend and model
         self.selected_backend = self.config.get('backend', models_config.get_default_backend())
+        # --- SpeechBrain: check .env for token, login if needed ---
+        if self.selected_backend == 'speechbrain' and not _hf_token:
+            token = get_hf_token_from_env()
+            if token:
+                huggingface_login(token=token)
+            else:
+                show_notification(AppConstants.APP_NAME, "SpeechBrain backend selected. Please log in to HuggingFace to access models.")
+                huggingface_login()
         self._ensure_model_for_backend()
         self.backend_instance = None
         self.available_backends = self._get_available_backends()
@@ -1117,6 +1365,14 @@ class VoiceTyper:
         self.selected_backend = backend_name
         self._ensure_model_for_backend()
         ConfigManager.save(self.config)
+        # --- SpeechBrain: check .env for token, login if needed ---
+        if backend_name == 'speechbrain' and not _hf_token:
+            token = get_hf_token_from_env()
+            if token:
+                huggingface_login(token=token)
+            else:
+                show_notification(AppConstants.APP_NAME, "SpeechBrain backend selected. Please log in to HuggingFace to access models.")
+                huggingface_login()
         self._initialize_backend_async(was_listening=was_listening)
         log(f"Switched to backend: {backend_name}")
     
@@ -1256,6 +1512,23 @@ class VoiceTyper:
                 except Exception as e2:
                     log(f"Error loading Whisper model (sync): {e2}", 'error')
                     self.backend_instance = None
+        elif backend == 'speechbrain':
+            models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'speechbrain')
+            try:
+                async_result = celery_load_speech_model.delay('speechbrain', model_name, models_dir)
+                result = async_result.get(timeout=10)
+                if result.get('status') == 'ok':
+                    self.backend_instance = SpeechBrainBackend({'model': model_name}, models_dir)
+                else:
+                    log(f"Error loading SpeechBrain model (celery): {result.get('error')}", 'error')
+                    self.backend_instance = None
+            except Exception as e:
+                log(f"Celery unavailable or timed out, loading SpeechBrain model synchronously: {e}", 'warning')
+                try:
+                    self.backend_instance = SpeechBrainBackend({'model': model_name}, models_dir)
+                except Exception as e2:
+                    log(f"Error loading SpeechBrain model (sync): {e2}", 'error')
+                    self.backend_instance = None
         else:
             log(f"Backend {backend} not implemented yet", 'warning')
             self.backend_instance = None
@@ -1388,6 +1661,7 @@ class SystemTrayManager:
         return pystray.Menu(
             pystray.MenuItem('Set Speech Log Pincode', self._set_speech_log_pincode_gui),
             pystray.MenuItem('View Encrypted Speech Log', self._view_encrypted_speech_log_gui),
+            pystray.MenuItem('HuggingFace Login', self._huggingface_login_gui),
             pystray.MenuItem('Reset Settings', self._reset_settings),
             pystray.MenuItem('Show Tutorial', self._show_tutorial),
             pystray.MenuItem('Open Config Folder', self._open_config_folder)
@@ -1510,6 +1784,12 @@ class SystemTrayManager:
             tk.Button(top, text="Close", command=top.destroy).pack(pady=5)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to decrypt speech log: {e}")
+
+    def _huggingface_login_gui(self, icon, item):
+        if huggingface_login():
+            show_notification(AppConstants.APP_NAME, "HuggingFace login successful.")
+        else:
+            show_notification(AppConstants.APP_NAME, "HuggingFace login failed or cancelled.")
 
 # =============================================================================
 # GLOBAL HOTKEY HANDLER

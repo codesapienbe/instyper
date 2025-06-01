@@ -181,6 +181,15 @@
       "url": "https://alphacephei.com/vosk/models/vosk-model-nl-spraakherkenning-0.6.zip",
       "size": 860000000,
       "notes": "Medium Dutch model from Kaldi_NL (20.40 (cv test) 32.64 (tv) 17.73 (mls) 19.96 (voxpopuli))"
+    },
+    {
+      "backend": "speechbrain",
+      "id": "asr-crdnn-transformerlm-librispeech",
+      "name": "CRDNN + TransformerLM (LibriSpeech)",
+      "model": "asr-crdnn-transformerlm-librispeech",
+      "repo_id": "speechbrain/asr-crdnn-transformerlm-librispeech",
+      "lang": "en",
+      "notes": "English ASR model with Transformer LM (LibriSpeech)."
     }
   ]
 } 
