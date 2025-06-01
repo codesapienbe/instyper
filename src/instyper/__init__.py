@@ -397,9 +397,11 @@ def human_size(nbytes: Optional[int]) -> str:
         i += 1
     return f"{nbytes:.1f} {suffixes[i]}"
 
-def show_notification(title: str, message: str) -> None:
-    """Show a cross-platform notification."""
-    log(f"Notification: {title} - {message}")
+def show_notification(title: str, message: str, level: str = 'info') -> None:
+    """Show a cross-platform notification, only for warnings or errors."""
+    if level not in ('warning', 'error'):
+        return  # Only show for warnings or errors
+    log(f"Notification: {title} - {message}", level)
     notification.notify(
         title=title,
         message=message,
@@ -1338,7 +1340,6 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
         import time
         import torchaudio
         import torch
-        from joblib import Parallel, delayed
         p = pyaudio.PyAudio()
         stream = None
         try:
@@ -1371,6 +1372,7 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                     # Transcribe with SpeechBrain (in-memory, no file I/O)
                     if indicator:
                         indicator.label.config(text='Transcribing...')
+                    text = ''
                     try:
                         try:
                             waveform, sr = torchaudio.load(wav_io)
@@ -1384,9 +1386,23 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                             else:
                                 data = data.T  # (channels, samples)
                             waveform = torch.from_numpy(data)
-                        # SpeechBrain expects a batch (list of waveforms)
-                        result = self.model.transcribe_batch([waveform], [sr])
-                        text = result[0].strip() if result and isinstance(result[0], str) else ''
+                        # Try both API signatures for transcribe_batch
+                        try:
+                            result = self.model.transcribe_batch(waveform, sr)
+                        except Exception as e2:
+                            log(f"transcribe_batch(waveform, sr) failed: {e2}", 'warning')
+                            try:
+                                result = self.model.transcribe_batch([waveform], [sr])
+                            except Exception as e3:
+                                log(f"transcribe_batch([waveform], [sr]) also failed: {e3}", 'error')
+                                result = None
+                        # Extract text
+                        if isinstance(result, list) and result and isinstance(result[0], str):
+                            text = result[0].strip()
+                        elif isinstance(result, str):
+                            text = result.strip()
+                        else:
+                            text = ''
                     except Exception as e:
                         log(f"SpeechBrain transcription error: {e}", 'error')
                         text = ''
@@ -1493,6 +1509,19 @@ class VoiceTyper:
             self.toggle_listening()
         self.config['backend'] = backend_name
         self.selected_backend = backend_name
+        # Ensure default model for backend if not valid
+        model_name = self.config.get('model')
+        valid = False
+        if model_name:
+            for m in models_config.get_backend_models(backend_name):
+                if m['model'] == model_name:
+                    valid = True
+                    break
+        if not valid:
+            default_model = models_config.get_default_model_for_backend(backend_name)
+            if default_model:
+                self.config['model'] = default_model
+                log(f"Set default model for backend {backend_name}: {default_model}", 'info')
         self._ensure_model_for_backend()
         ConfigManager.save(self.config)
         # --- SpeechBrain: check .env for token, login if needed ---
