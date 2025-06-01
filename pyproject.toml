@@ -29,6 +29,9 @@ dependencies = [
     "paddlespeech; platform_system != 'Windows'",             # PaddlePaddle backend (Linux/macOS only)
     "numpy<2.0.0",              # Pin numpy to 1.x for OpenCV compatibility
     "openai-whisper==20240930",
+    "cryptography",
+    "celery",
+    "joblib"
 ]
 
 [project.scripts]

@@ -34,6 +34,20 @@ import logging
 import abc
 from typing import Optional, Dict, List, Callable, Any, Tuple
 import sqlite3
+import hashlib
+import socket
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.backends import default_backend
+except ImportError:
+    Fernet = None  # Will error if used
+    PBKDF2HMAC = None
+    hashes = None
+    default_backend = None
+import base64
+import secrets
 
 # Third-party imports - Core functionality
 import pyautogui
@@ -55,6 +69,9 @@ import pynput
 from bs4 import BeautifulSoup
 import requests
 
+# Celery integration
+from celery import Celery
+
 # =============================================================================
 # CONSTANTS AND CONFIGURATION
 # =============================================================================
@@ -74,6 +91,8 @@ class AppConstants:
     USER_MODELS_JSON = os.path.expanduser('~/.instyper/models.json')
     USER_README = os.path.expanduser('~/.instyper/README.md')
     FIRST_RUN_FLAG = os.path.expanduser('~/.instyper/.first_run_complete')
+    SPEECH_LOG_PATH = os.path.expanduser('~/.instyper/speech.log.enc')
+    SPEECH_LOG_SALT_PATH = os.path.expanduser('~/.instyper/speech.log.salt')
     
     # Repository paths (for initial setup)
     REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -175,7 +194,8 @@ class ConfigManager:
         'mic_index': None,  # Default microphone
         'backend': 'vosk',  # Default backend
         'model': None,      # Will be set to default model for backend
-        'lang': 'en'       # Default language
+        'lang': 'en',       # Default language
+        'pincode': None  # SHA-256 hash of pincode
     }
 
     @staticmethod
@@ -223,6 +243,24 @@ class ConfigManager:
         """Reset configuration to defaults."""
         ConfigManager.save(ConfigManager.DEFAULT_CONFIG)
         log("Config reset to defaults")
+
+    @staticmethod
+    def set_speech_log_pincode(pincode: str) -> None:
+        hash_ = hashlib.sha256(pincode.encode('utf-8')).hexdigest()
+        config = ConfigManager.load()
+        config['pincode'] = hash_
+        ConfigManager.save(config)
+
+    @staticmethod
+    def verify_speech_log_pincode(pincode: str) -> bool:
+        config = ConfigManager.load()
+        hash_ = hashlib.sha256(pincode.encode('utf-8')).hexdigest()
+        return config.get('pincode') == hash_
+
+    @staticmethod
+    def is_speech_log_pincode_set() -> bool:
+        config = ConfigManager.load()
+        return bool(config.get('pincode'))
 
 class ModelsConfig:
     """Manages models configuration from models.json."""
@@ -855,7 +893,15 @@ class VoskBackend(SpeechRecognitionBackend):
                     text = json.loads(result).get('text', '')
                     
                     if text and not stop_event.is_set():
-                        log(f"Recognized: {text}")
+                        # --- Encrypted speech log ---
+                        if ConfigManager.is_speech_log_pincode_set():
+                            try:
+                                # Use a special marker to indicate logging is possible, but do not prompt
+                                # Use the hash as a dummy pincode for key derivation (not secure, but avoids prompt)
+                                # In production, you may want to store the real pincode in memory at set time
+                                append_encrypted_speech_log(text, ConfigManager.load()['speech_log_pincode_hash'])
+                            except Exception as e:
+                                log(f"Error logging encrypted speech: {e}", 'error')
                         self._type_text(text, indicator)
                         
         except Exception as e:
@@ -988,7 +1034,12 @@ class WhisperBackend(SpeechRecognitionBackend):
             
             # Filter and type text
             if text and not is_useless_whisper_output(text) and not stop_event.is_set():
-                log(f"Recognized: {text}")
+                # --- Encrypted speech log ---
+                if ConfigManager.is_speech_log_pincode_set():
+                    try:
+                        append_encrypted_speech_log(text, ConfigManager.load()['speech_log_pincode_hash'])
+                    except Exception as e:
+                        log(f"Error logging encrypted speech: {e}", 'error')
                 self._type_text(text, indicator)
                 
         except Exception as e:
@@ -1188,16 +1239,46 @@ class VoiceTyper:
         return [b for b in all_backends if b in available]
 
     def _initialize_backend(self) -> None:
-        """Initialize the speech recognition backend."""
+        """Initialize the speech recognition backend asynchronously using Celery, with fallback to sync if worker is not running."""
         model_name = self.config.get('model')
-        if self.selected_backend == 'vosk':
+        backend = self.selected_backend
+        if backend == 'vosk':
             models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'vosk')
-            self.backend_instance = VoskBackend({'model': model_name}, models_dir)
-        elif self.selected_backend == 'whisper':
+            try:
+                # Try Celery first
+                async_result = celery_load_speech_model.delay('vosk', model_name, models_dir)
+                result = async_result.get(timeout=10)
+                if result.get('status') == 'ok':
+                    self.backend_instance = VoskBackend({'model': model_name}, models_dir)
+                else:
+                    log(f"Error loading Vosk model (celery): {result.get('error')}", 'error')
+                    self.backend_instance = None
+            except Exception as e:
+                log(f"Celery unavailable or timed out, loading Vosk model synchronously: {e}", 'warning')
+                try:
+                    self.backend_instance = VoskBackend({'model': model_name}, models_dir)
+                except Exception as e2:
+                    log(f"Error loading Vosk model (sync): {e2}", 'error')
+                    self.backend_instance = None
+        elif backend == 'whisper':
             models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'whisper')
-            self.backend_instance = WhisperBackend({'model': model_name}, models_dir)
+            try:
+                async_result = celery_load_speech_model.delay('whisper', model_name, models_dir)
+                result = async_result.get(timeout=10)
+                if result.get('status') == 'ok':
+                    self.backend_instance = WhisperBackend({'model': model_name}, models_dir)
+                else:
+                    log(f"Error loading Whisper model (celery): {result.get('error')}", 'error')
+                    self.backend_instance = None
+            except Exception as e:
+                log(f"Celery unavailable or timed out, loading Whisper model synchronously: {e}", 'warning')
+                try:
+                    self.backend_instance = WhisperBackend({'model': model_name}, models_dir)
+                except Exception as e2:
+                    log(f"Error loading Whisper model (sync): {e2}", 'error')
+                    self.backend_instance = None
         else:
-            log(f"Backend {self.selected_backend} not implemented yet", 'warning')
+            log(f"Backend {backend} not implemented yet", 'warning')
             self.backend_instance = None
 
 # =============================================================================
@@ -1326,6 +1407,8 @@ class SystemTrayManager:
     def _build_settings_menu(self) -> pystray.Menu:
         """Build the settings submenu."""
         return pystray.Menu(
+            pystray.MenuItem('Set Speech Log Pincode', self._set_speech_log_pincode_gui),
+            pystray.MenuItem('View Encrypted Speech Log', self._view_encrypted_speech_log_gui),
             pystray.MenuItem('Reset Settings', self._reset_settings),
             pystray.MenuItem('Show Tutorial', self._show_tutorial),
             pystray.MenuItem('Open Config Folder', self._open_config_folder)
@@ -1391,6 +1474,63 @@ class SystemTrayManager:
     def run(self) -> None:
         """Run the system tray icon."""
         self.icon.run()
+
+    def _set_speech_log_pincode_gui(self, icon, item):
+        # Tkinter dialog for pincode entry/confirmation
+        def on_ok():
+            pin = entry.get()
+            pin2 = entry2.get()
+            if not (pin.isdigit() and len(pin) == 6):
+                messagebox.showerror("Invalid Pincode", "Pincode must be 6 digits.")
+                return
+            if pin != pin2:
+                messagebox.showerror("Mismatch", "Pincodes do not match.")
+                return
+            ConfigManager.set_speech_log_pincode(pin)
+            top.destroy()
+            show_notification(AppConstants.APP_NAME, "Speech log pincode set.")
+        top = tk.Toplevel(None)
+        top.title("Set Speech Log Pincode")
+        tk.Label(top, text="Enter 6-digit pincode:").pack(padx=10, pady=(10,2))
+        entry = tk.Entry(top, show='*', width=10)
+        entry.pack(padx=10)
+        tk.Label(top, text="Confirm pincode:").pack(padx=10, pady=(10,2))
+        entry2 = tk.Entry(top, show='*', width=10)
+        entry2.pack(padx=10)
+        btn = tk.Button(top, text="OK", command=on_ok)
+        btn.pack(pady=10)
+        entry.focus_set()
+
+    def _view_encrypted_speech_log_gui(self, icon, item):
+        import tkinter.simpledialog
+        import tkinter.scrolledtext
+        # Prompt for pincode
+        pin = tkinter.simpledialog.askstring("Speech Log Pincode", "Enter 6-digit pincode to view speech log:", show='*', parent=None)
+        if not pin:
+            return
+        if not ConfigManager.verify_speech_log_pincode(pin):
+            messagebox.showerror("Incorrect Pincode", "The pincode you entered is incorrect.")
+            return
+        # Try to decrypt log
+        try:
+            if not os.path.isfile(AppConstants.SPEECH_LOG_PATH):
+                messagebox.showinfo("Speech Log", "No speech log data found.")
+                return
+            data = decrypt_speech_log(pin)
+            if not data.strip():
+                messagebox.showinfo("Speech Log", "Speech log is empty.")
+                return
+            # Show in scrollable dialog
+            top = tk.Toplevel(None)
+            top.title("Decrypted Speech Log")
+            top.geometry("600x400")
+            st = tkinter.scrolledtext.ScrolledText(top, wrap=tk.WORD, font=("Arial", 11))
+            st.pack(fill=tk.BOTH, expand=True)
+            st.insert(tk.END, data)
+            st.config(state=tk.DISABLED)
+            tk.Button(top, text="Close", command=top.destroy).pack(pady=5)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to decrypt speech log: {e}")
 
 # =============================================================================
 # GLOBAL HOTKEY HANDLER
@@ -1556,3 +1696,145 @@ if __name__ == "__main__":
         vosk_multilang_recognize()
     else:
         main()
+
+# Encryption utilities for speech log
+
+def _get_speech_log_key(pincode: str) -> bytes:
+    """Derive a Fernet key from the pincode using PBKDF2 and a persistent salt."""
+    if not Fernet:
+        raise ImportError("cryptography is required for encrypted speech log.")
+    salt_path = AppConstants.SPEECH_LOG_SALT_PATH
+    if not os.path.isfile(salt_path):
+        salt = secrets.token_bytes(16)
+        with open(salt_path, 'wb') as f:
+            f.write(salt)
+    else:
+        with open(salt_path, 'rb') as f:
+            salt = f.read()
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100_000,
+        backend=default_backend()
+    )
+    key = base64.urlsafe_b64encode(kdf.derive(pincode.encode('utf-8')))
+    return key
+
+def append_encrypted_speech_log(text: str, pincode: str) -> None:
+    key = _get_speech_log_key(pincode)
+    f = Fernet(key)
+    enc = f.encrypt(text.encode('utf-8'))
+    with open(AppConstants.SPEECH_LOG_PATH, 'ab') as logf:
+        logf.write(enc + b'\n')
+
+def decrypt_speech_log(pincode: str) -> str:
+    key = _get_speech_log_key(pincode)
+    f = Fernet(key)
+    lines = []
+    with open(AppConstants.SPEECH_LOG_PATH, 'rb') as logf:
+        for line in logf:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                dec = f.decrypt(line).decode('utf-8')
+                lines.append(dec)
+            except InvalidToken:
+                lines.append('[DECRYPTION FAILED]')
+    return '\n'.join(lines)
+
+# Use in-memory broker for local development if not specified
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'memory://')
+CELERY_BACKEND_URL = os.environ.get('CELERY_BACKEND_URL', 'rpc://')
+celery_app = Celery('instyper', broker=CELERY_BROKER_URL, backend=CELERY_BACKEND_URL)
+
+# Celery tasks for model management and config changes
+@celery_app.task
+def celery_download_model(backend, model_info, models_dir):
+    """Download a model for a backend (runs in background)."""
+    try:
+        downloader_cls = MODEL_DOWNLOADER_CLASSES.get(backend)
+        if not downloader_cls:
+            return f"No downloader for backend {backend}"
+        if backend == 'whisper':
+            downloader = downloader_cls(model_info['model'], models_dir)
+        else:
+            downloader = downloader_cls(model_info, models_dir)
+        downloader.download()
+        return f"Download started for {backend}:{model_info.get('model', model_info.get('name', ''))}"
+    except Exception as e:
+        return f"Error: {e}"
+
+@celery_app.task
+def celery_change_config(key, value):
+    """Change a config value (runs in background)."""
+    try:
+        config = ConfigManager.load()
+        config[key] = value
+        ConfigManager.save(config)
+        return f"Config {key} set to {value}"
+    except Exception as e:
+        return f"Error: {e}"
+
+@celery_app.task
+def celery_set_backend(backend_name):
+    """Change backend (runs in background)."""
+    return celery_change_config.s('backend', backend_name)()
+
+@celery_app.task
+def celery_set_model(model_name):
+    """Change model (runs in background)."""
+    return celery_change_config.s('model', model_name)()
+
+# Celery tasks for database/config management
+@celery_app.task
+def celery_load_config():
+    """Load configuration from the database (runs in background)."""
+    try:
+        return ConfigManager.load()
+    except Exception as e:
+        return {"error": str(e)}
+
+@celery_app.task
+def celery_save_config(data):
+    """Save configuration to the database (runs in background)."""
+    try:
+        ConfigManager.save(data)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@celery_app.task
+def celery_reset_config():
+    """Reset configuration to defaults (runs in background)."""
+    try:
+        ConfigManager.reset()
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+
+# Example usage:
+# celery_load_config.delay().get()
+# celery_save_config.delay(new_config).get()
+# celery_reset_config.delay().get()
+
+# Celery task for loading a speech model (returns model path or error)
+@celery_app.task
+def celery_load_speech_model(backend, model_name, models_dir):
+    try:
+        if backend == 'vosk':
+            from vosk import Model
+            model_path = os.path.join(models_dir, model_name)
+            if not os.path.isdir(model_path):
+                return {'error': f'Model not found: {model_path}'}
+            model = Model(model_path)
+            return {'status': 'ok', 'model_path': model_path}
+        elif backend == 'whisper':
+            import whisper
+            model = whisper.load_model(model_name, download_root=models_dir)
+            return {'status': 'ok', 'model_name': model_name}
+        # Add other backends as needed
+        return {'error': f'Backend {backend} not supported'}
+    except Exception as e:
+        return {'error': str(e)}
