@@ -1083,7 +1083,6 @@ class VoiceTyper:
         self.selected_backend = self.config.get('backend', models_config.get_default_backend())
         self._ensure_model_for_backend()
         self.backend_instance = None
-        self._initialize_backend()
         self.available_backends = self._get_available_backends()
         log(f"VoiceTyper initialized with backend: {self.selected_backend}")
     
@@ -1104,64 +1103,60 @@ class VoiceTyper:
                 ConfigManager.save(self.config)
     
     def set_backend(self, backend_name: str) -> None:
-        """Change the speech recognition backend."""
+        """Change the speech recognition backend asynchronously."""
         if backend_name not in self.available_backends:
             log(f"Backend {backend_name} not available", 'error')
             return
-        
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()
-        
         # Update backend in config
         self.config['backend'] = backend_name
         self.selected_backend = backend_name
-        
         # Ensure model matches backend or set to default
         self._ensure_model_for_backend()
-        
         # Save config
         ConfigManager.save(self.config)
-        
-        # Initialize new backend
-        self._initialize_backend()
-        
+        # Initialize new backend asynchronously
+        self._initialize_backend_async(was_listening=was_listening)
         log(f"Switched to backend: {backend_name}")
         show_notification(AppConstants.APP_NAME, f'Switched to backend: {backend_name}')
-        
-        if was_listening:
-            self.toggle_listening()
-    
-    def set_microphone(self, mic_index: Optional[int]) -> None:
-        """Set the microphone index."""
-        was_listening = self.is_listening
-        if was_listening:
-            self.toggle_listening()
-        
-        # Update microphone selection
-        self.audio_manager.set_mic_index(mic_index)
-        self.config['mic_index'] = mic_index
-        ConfigManager.save(self.config)
-        
-        if was_listening:
-            self.toggle_listening()
-    
+
     def set_model(self, model_name: str) -> None:
-        """Set the model for the current backend."""
+        """Set the model for the current backend asynchronously."""
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()
-        
         # Update model in config
         self.config['model'] = model_name
         ConfigManager.save(self.config)
-        
-        # Reinitialize backend with new model
-        self._initialize_backend()
-        
-        if was_listening:
-            self.toggle_listening()
-    
+        # Reinitialize backend with new model asynchronously
+        self._initialize_backend_async(was_listening=was_listening)
+
+    def _initialize_backend_async(self, was_listening=False):
+        """Start backend/model loading in a background thread to avoid blocking the GUI."""
+        if hasattr(self, '_loading_backend') and self._loading_backend:
+            return  # Prevent concurrent loads
+        self._loading_backend = True
+        if self.indicator:
+            self.indicator.label.config(text='Loading model...')
+            self.indicator.show()
+        def worker():
+            try:
+                self._initialize_backend()
+                if self.indicator:
+                    self.indicator.label.config(text='Ready')
+                    self.indicator.hide()
+                show_notification(AppConstants.APP_NAME, f"{self.selected_backend} model loaded.")
+                if was_listening:
+                    self.toggle_listening()
+            except Exception as e:
+                log(f"Error loading backend: {e}", 'error')
+                show_notification(AppConstants.APP_NAME, f"Error loading backend: {e}")
+            finally:
+                self._loading_backend = False
+        threading.Thread(target=worker, daemon=True).start()
+
     def toggle_listening(self) -> None:
         """Toggle voice typing on/off."""
         self.is_listening = not self.is_listening
