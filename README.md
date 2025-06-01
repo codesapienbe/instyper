@@ -111,6 +111,23 @@ To ensure transparency and user control, you must manually install all prerequis
    2. Unzip into `~/instyper/models` (we'll create this automatically)
    3. Restart Instyper - new languages appear like magic!
 
+### ⚡ New: Non-Blocking Model & Backend Switching
+
+Instyper now supports **asynchronous, non-blocking switching** of speech models and backends!
+
+- When you change the speech recognition model or backend (for example, switching from Vosk to Whisper, or changing the language/model), Instyper loads the new model in the background.
+- **The app and its menus stay fully responsive**—no more freezing or waiting!
+- You'll see a loading indicator while the new model is being prepared, and a notification when it's ready.
+- If you were already using voice typing, it will automatically resume with the new model as soon as loading is complete.
+
+This makes it much faster and smoother to experiment with different models or languages, even with large models that take a while to load.
+
+### 🔔 Notifications & Feedback
+
+- Instyper uses a subtle status indicator near your mouse cursor for most feedback (like loading, listening, or typing).
+- OS native notifications are only shown for important events, such as errors or when a long-running operation completes.
+- This keeps your workflow smooth and distraction-free!
+
 ### ⚙️ Where Everything Lives  
 
 All your personal settings and languages are kept in:  

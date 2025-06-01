@@ -429,7 +429,10 @@ class ModelDownloader(abc.ABC):
     def download(self) -> None:
         pass
     def _notify_progress(self, message: str) -> None:
-        show_notification(AppConstants.APP_NAME, message)
+        # Only show OS notification for errors or completion
+        if 'error' in message.lower() or 'ready' in message.lower():
+            show_notification(AppConstants.APP_NAME, message)
+        # Otherwise, rely on the status indicator (handled elsewhere)
 
 class VoskModelDownloader(ModelDownloader):
     """Downloads and manages Vosk models."""
@@ -1110,33 +1113,25 @@ class VoiceTyper:
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()
-        # Update backend in config
         self.config['backend'] = backend_name
         self.selected_backend = backend_name
-        # Ensure model matches backend or set to default
         self._ensure_model_for_backend()
-        # Save config
         ConfigManager.save(self.config)
-        # Initialize new backend asynchronously
         self._initialize_backend_async(was_listening=was_listening)
         log(f"Switched to backend: {backend_name}")
-        show_notification(AppConstants.APP_NAME, f'Switched to backend: {backend_name}')
-
+    
     def set_model(self, model_name: str) -> None:
         """Set the model for the current backend asynchronously."""
         was_listening = self.is_listening
         if was_listening:
             self.toggle_listening()
-        # Update model in config
         self.config['model'] = model_name
         ConfigManager.save(self.config)
-        # Reinitialize backend with new model asynchronously
         self._initialize_backend_async(was_listening=was_listening)
-
+    
     def _initialize_backend_async(self, was_listening=False):
-        """Start backend/model loading in a background thread to avoid blocking the GUI."""
         if hasattr(self, '_loading_backend') and self._loading_backend:
-            return  # Prevent concurrent loads
+            return
         self._loading_backend = True
         if self.indicator:
             self.indicator.label.config(text='Loading model...')
@@ -1147,7 +1142,6 @@ class VoiceTyper:
                 if self.indicator:
                     self.indicator.label.config(text='Ready')
                     self.indicator.hide()
-                show_notification(AppConstants.APP_NAME, f"{self.selected_backend} model loaded.")
                 if was_listening:
                     self.toggle_listening()
             except Exception as e:
@@ -1156,42 +1150,32 @@ class VoiceTyper:
             finally:
                 self._loading_backend = False
         threading.Thread(target=worker, daemon=True).start()
-
+    
     def toggle_listening(self) -> None:
-        """Toggle voice typing on/off."""
         self.is_listening = not self.is_listening
-        
         if self.is_listening:
             if not self.backend_instance or not self.backend_instance.is_available():
                 show_notification(AppConstants.APP_NAME, 'Backend not available. Please configure a model.')
                 self.is_listening = False
                 return
-            
-            show_notification(AppConstants.APP_NAME, 'Voice typing started')
             log("Voice typing started...")
-            
             if self.indicator:
                 self.indicator.label.config(text='Listening...')
                 self.indicator.show()
-            
             self.stop_event.clear()
             self.recognition_thread = threading.Thread(target=self._recognition_worker)
             self.recognition_thread.daemon = True
             self.recognition_thread.start()
         else:
-            show_notification(AppConstants.APP_NAME, 'Voice typing stopped')
             log("Voice typing stopped.")
-            
             self.stop_event.set()
             if self.recognition_thread:
                 self.recognition_thread.join(timeout=2)
-            
             if self.indicator:
                 self.indicator.label.config(text='...')
                 self.indicator.hide()
     
     def _recognition_worker(self) -> None:
-        """Worker thread for speech recognition."""
         try:
             self.backend_instance.recognize_speech(
                 self.stop_event,
@@ -1809,10 +1793,6 @@ def celery_reset_config():
     except Exception as e:
         return {"error": str(e)}
 
-# Example usage:
-# celery_load_config.delay().get()
-# celery_save_config.delay(new_config).get()
-# celery_reset_config.delay().get()
 
 # Celery task for loading a speech model (returns model path or error)
 @celery_app.task
