@@ -32,7 +32,8 @@ dependencies = [
     "cryptography",
     "celery",
     "joblib",
-    "huggingface_hub"
+    "huggingface_hub",
+    "soundfile"
 ]
 
 [project.scripts]

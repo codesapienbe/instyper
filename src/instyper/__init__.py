@@ -48,6 +48,8 @@ except ImportError:
     default_backend = None
 import base64
 import secrets
+import glob
+import yaml
 
 # Third-party imports - Core functionality
 import pyautogui
@@ -127,7 +129,7 @@ def huggingface_login(token=None):
             hf_login(token=token)
             _hf_token = token
             save_hf_token_to_env(token)
-            show_notification(AppConstants.APP_NAME, "HuggingFace login successful.")
+            # No notification for success
             return True
         except Exception as e:
             show_notification(AppConstants.APP_NAME, f"HuggingFace login failed: {e}")
@@ -624,14 +626,14 @@ class ListeningIndicator:
         self.root = tk.Tk()
         self.root.overrideredirect(True)
         self.root.attributes('-topmost', True)
-        self.root.configure(bg='#1DE9B6')
+        self.root.configure(bg='#222222')
         
         self.label = tk.Label(
             self.root, 
             text='...', 
             font=('Arial', 9, 'bold'), 
-            fg='#00BFAE', 
-            bg='#1DE9B6'
+            fg='#FFFFFF', 
+            bg='#222222'
         )
         self.label.pack(ipadx=4, ipady=1)
         self.root.withdraw()
@@ -1219,18 +1221,57 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
         self.model = None
         self._load_model()
 
+    def _find_ckpt_file(self, model_path):
+        # Search for pretrained_model.ckpt in all subdirs, or any .ckpt file
+        ckpt_files = glob.glob(os.path.join(model_path, '**', '*.ckpt'), recursive=True)
+        if not ckpt_files:
+            return None, []
+        # Prefer pretrained_model.ckpt
+        for f in ckpt_files:
+            if os.path.basename(f) == 'pretrained_model.ckpt':
+                return f, ckpt_files
+        # Otherwise, use the first found
+        return ckpt_files[0], ckpt_files
+
+    def _get_required_ckpt_filenames(self, model_path):
+        # Parse hyperparams.yaml for .ckpt filenames
+        hyperparams_path = os.path.join(model_path, 'hyperparams.yaml')
+        required_ckpts = set()
+        if os.path.isfile(hyperparams_path):
+            with open(hyperparams_path, 'r', encoding='utf-8') as f:
+                try:
+                    params = yaml.safe_load(f)
+                    # Look for .ckpt references in the YAML
+                    def find_ckpts(obj):
+                        if isinstance(obj, dict):
+                            for v in obj.values():
+                                yield from find_ckpts(v)
+                        elif isinstance(obj, list):
+                            for v in obj:
+                                yield from find_ckpts(v)
+                        elif isinstance(obj, str) and obj.endswith('.ckpt'):
+                            yield obj
+                    required_ckpts = set(find_ckpts(params))
+                except Exception as e:
+                    log(f"Could not parse hyperparams.yaml for ckpt files: {e}", 'warning')
+        return required_ckpts
+
     def _load_model(self):
         try:
             import speechbrain as sb
             model_name = self.config.get('model')
             model_path = os.path.join(self.models_dir, model_name)
             # Check for required files
-            required_files = ['hyperparams.yaml', 'pretrained_model.ckpt']
+            required_files = ['hyperparams.yaml']
             missing = [f for f in required_files if not os.path.isfile(os.path.join(model_path, f))]
+            ckpt_file, all_ckpts = self._find_ckpt_file(model_path)
+            # Check for required .ckpt files from hyperparams.yaml
+            required_ckpts = self._get_required_ckpt_filenames(model_path)
+            found_ckpt_names = {os.path.basename(f) for f in all_ckpts}
+            missing_ckpts = [f for f in required_ckpts if f not in found_ckpt_names]
             if missing:
                 # Try to auto-download if repo_id is present in model config
                 repo_id = None
-                # Find repo_id from models_config
                 for m in models_config.get_backend_models('speechbrain'):
                     if m['model'] == model_name:
                         repo_id = m.get('repo_id')
@@ -1244,17 +1285,20 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                             self.config['indicator'].show()
                         snapshot_download(repo_id=repo_id, local_dir=model_path, repo_type="model", local_dir_use_symlinks=False)
                         log(f"SpeechBrain model {repo_id} downloaded.", 'info')
-                        # Check again for required files
+                        # Re-check for files
                         missing = [f for f in required_files if not os.path.isfile(os.path.join(model_path, f))]
-                        if missing:
+                        ckpt_file, all_ckpts = self._find_ckpt_file(model_path)
+                        required_ckpts = self._get_required_ckpt_filenames(model_path)
+                        found_ckpt_names = {os.path.basename(f) for f in all_ckpts}
+                        missing_ckpts = [f for f in required_ckpts if f not in found_ckpt_names]
+                        if missing or missing_ckpts:
                             raise FileNotFoundError(
-                                f"SpeechBrain model still missing files after download: {missing} in {model_path}. "
-                                "Check the HuggingFace repo or download manually."
+                                f"SpeechBrain model still missing files after download: {missing + missing_ckpts} in {model_path}.\nFiles found: {os.listdir(model_path)}.\nCheck the HuggingFace repo or download manually."
                             )
                     except Exception as e:
                         log(f"Auto-download failed: {e}", 'error')
                         raise FileNotFoundError(
-                            f"SpeechBrain model missing files: {missing} in {model_path}. "
+                            f"SpeechBrain model missing files: {missing + missing_ckpts} in {model_path}. "
                             f"Auto-download failed: {e}\nYou can manually run: huggingface-cli repo clone {repo_id} {model_path}"
                         )
                     finally:
@@ -1263,9 +1307,17 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                             self.config['indicator'].hide()
                 else:
                     raise FileNotFoundError(
-                        f"SpeechBrain model missing files: {missing} in {model_path}. "
+                        f"SpeechBrain model missing files: {missing + missing_ckpts} in {model_path}. "
                         "No repo_id found in model config. Please add 'repo_id' to your models.json or download the full model folder from HuggingFace."
                     )
+            # Log found .ckpt files
+            if all_ckpts:
+                log(f"Found .ckpt files: {all_ckpts}", 'info')
+            if missing_ckpts:
+                log(f"Missing required .ckpt files (from hyperparams.yaml): {missing_ckpts}", 'warning')
+                raise FileNotFoundError(
+                    f"Missing required .ckpt files: {missing_ckpts} in {model_path}.\nAll .ckpt files found: {all_ckpts}"
+                )
             self.model = sb.pretrained.EncoderDecoderASR.from_hparams(
                 source=model_path, savedir=model_path
             )
@@ -1278,9 +1330,87 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
         return self.model is not None
 
     def recognize_speech(self, stop_event: threading.Event, mic_index: Optional[int], indicator: Optional[ListeningIndicator]) -> None:
-        # Similar to Vosk/Whisper: record audio, transcribe, type text
-        # Use self.model.transcribe_file or self.model.transcribe_batch
-        pass  # We'll fill this in the next step
+        import pyaudio
+        import wave
+        import io
+        import pyperclip
+        import pyautogui
+        import time
+        import torchaudio
+        import torch
+        from joblib import Parallel, delayed
+        p = pyaudio.PyAudio()
+        stream = None
+        try:
+            stream = p.open(
+                format=AppConstants.AUDIO_FORMAT,
+                channels=AppConstants.AUDIO_CHANNELS,
+                rate=AppConstants.AUDIO_RATE,
+                input=True,
+                input_device_index=mic_index,
+                frames_per_buffer=AppConstants.FRAMES_PER_BUFFER
+            )
+            stream.start_stream()
+            log("SpeechBrain recognition started. Speak into your microphone.")
+            buffer = b''
+            min_bytes = AppConstants.MIN_AUDIO_BYTES
+            max_bytes = AppConstants.MAX_AUDIO_BYTES
+            while not stop_event.is_set():
+                data = stream.read(AppConstants.AUDIO_CHUNK, exception_on_overflow=False)
+                buffer += data
+                if len(buffer) >= min_bytes:
+                    # Write buffer to in-memory WAV
+                    wav_io = io.BytesIO()
+                    wf = wave.open(wav_io, 'wb')
+                    wf.setnchannels(AppConstants.AUDIO_CHANNELS)
+                    wf.setsampwidth(p.get_sample_size(AppConstants.AUDIO_FORMAT))
+                    wf.setframerate(AppConstants.AUDIO_RATE)
+                    wf.writeframes(buffer[:max_bytes])
+                    wf.close()
+                    wav_io.seek(0)
+                    # Transcribe with SpeechBrain (in-memory, no file I/O)
+                    if indicator:
+                        indicator.label.config(text='Transcribing...')
+                    try:
+                        try:
+                            waveform, sr = torchaudio.load(wav_io)
+                        except Exception as e1:
+                            log(f"torchaudio.load failed, trying soundfile: {e1}", 'warning')
+                            import soundfile as sf
+                            wav_io.seek(0)
+                            data, sr = sf.read(wav_io, dtype='float32')
+                            if data.ndim == 1:
+                                data = data[None, :]  # (1, samples)
+                            else:
+                                data = data.T  # (channels, samples)
+                            waveform = torch.from_numpy(data)
+                        # SpeechBrain expects a batch (list of waveforms)
+                        result = self.model.transcribe_batch([waveform], [sr])
+                        text = result[0].strip() if result and isinstance(result[0], str) else ''
+                    except Exception as e:
+                        log(f"SpeechBrain transcription error: {e}", 'error')
+                        text = ''
+                    # Type text
+                    if text and not stop_event.is_set():
+                        if indicator:
+                            indicator.label.config(text='Typing...')
+                        pyperclip.copy(text + " ")
+                        pyautogui.hotkey('ctrl', 'v')
+                        if indicator:
+                            indicator.label.config(text='Listening...')
+                    buffer = b''
+            if indicator:
+                indicator.label.config(text='...')
+        except Exception as e:
+            log(f"Error in SpeechBrain recognition: {e}", 'error')
+        finally:
+            if stream:
+                try:
+                    stream.stop_stream()
+                    stream.close()
+                except Exception:
+                    pass
+            p.terminate()
 
 # =============================================================================
 # MAIN APPLICATION LOGIC
