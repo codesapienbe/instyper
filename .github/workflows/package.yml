@@ -124,12 +124,12 @@ jobs:
           fi
 
       - name: Download Linux build
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: instyper-ubuntu-latest
           path: dist_linux
       - name: Download Windows build
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: instyper-windows-latest
           path: dist_windows
