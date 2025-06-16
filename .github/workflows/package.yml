@@ -45,7 +45,7 @@ jobs:
       - name: Install build dependencies on macOS
         if: matrix.os == 'macos-latest'
         run: |
-          brew install portaudio cmake
+          brew install portaudio cmake swig
 
       - name: Build with PyInstaller via UV
         shell: bash
@@ -75,6 +75,8 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
+          Write-Host "Listing contents of dist directory:"
+          Get-ChildItem -Path "dist" -Recurse
           if (Test-Path -Path "dist\instyper\instyper.exe") {
             Move-Item -Path "dist\instyper\instyper.exe" -Destination "dist\instyper-windows.exe"
           } else {
