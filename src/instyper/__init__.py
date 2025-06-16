@@ -1125,15 +1125,32 @@ class WhisperBackend(SpeechRecognitionBackend):
         self._load_model()
     
     def _load_model(self) -> None:
-        """Load the Whisper model."""
         try:
             import whisper
+            import gc
+            import torch
+        except ImportError:
+            log("Whisper not installed. Please pip install openai-whisper", 'error')
+            return
+
+        try:
+            # Unload previous model if it exists
+            if self.model is not None:
+                del self.model
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                self.model = None
+
             model_name = self.config.get('model', 'base')
             self.model = whisper.load_model(model_name, download_root=self.models_dir)
             log(f"Loaded Whisper model: {model_name}")
-            
-        except ImportError:
-            log("Whisper not installed. Please install with 'pip install openai-whisper'", 'error')
+        except ModuleNotFoundError as e:
+            if 'torch' in str(e):
+                log("PyTorch is required for Whisper. Please pip install torch", 'error')
+            else:
+                log(f"Error loading Whisper model: {e}", 'error')
+            self.model = None
         except Exception as e:
             log(f"Error loading Whisper model: {e}", 'error')
             self.model = None
@@ -1419,8 +1436,9 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                         # Call transcribe_batch with batch of waveforms and list of sample rates
                         result = self.model.transcribe_batch([waveform], [sr])
                         # Extract text
-                        if isinstance(result, list) and result and isinstance(result[0], str):
-                            text = result[0].strip()
+                        if isinstance(result, list) and result:
+                            # Handle list of transcriptions
+                            text = result[0].strip() if isinstance(result[0], str) else ''
                         elif isinstance(result, str):
                             text = result.strip()
                         else:
