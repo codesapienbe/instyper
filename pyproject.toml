@@ -45,8 +45,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = [
-]
-
-[tool.uv]
-required-environments = ["macosx_11_0_x86_64"]
+dev = []
