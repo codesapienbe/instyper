@@ -62,23 +62,12 @@ jobs:
           uv run pyinstaller \
             --noconfirm \
             --windowed \
-            --onefile src/instyper/__init__.py \
+            --onefile \
+            --collect-all vosk \
+            src/instyper/__init__.py \
             --name instyper \
             --strip \
-            --upx-dir /usr/bin \
-            --exclude-module PyQt6 \
-            --exclude-module torch \
-            --exclude-module sentence_transformers \
-            --exclude-module matplotlib \
-            --exclude-module pandas \
-            --exclude-module scipy \
-            --exclude-module sklearn \
-            --exclude-module soundfile \
-            --exclude-module sounddevice \
-            --exclude-module cryptography \
-            --exclude-module celery \
-            --exclude-module joblib \
-            --exclude-module huggingface_hub
+            --upx-dir /usr/bin
 
       - name: Rename output (Windows)
         if: matrix.os == 'windows-latest'
