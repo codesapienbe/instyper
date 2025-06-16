@@ -1594,6 +1594,17 @@ class VoiceTyper:
         def worker():
             try:
                 self._initialize_backend()
+                # Add fallback logic if backend/model failed to load
+                if not self.backend_instance or not self.backend_instance.is_available():
+                    default_backend = models_config.get_default_backend() or 'vosk'
+                    default_model = models_config.get_default_model_for_backend(default_backend) or ''
+                    log(f"Invalid backend/model load, falling back to default: backend={default_backend}, model={default_model}", 'warning')
+                    show_notification(AppConstants.APP_NAME, f"Fell back to default backend: {default_backend}, model: {default_model}", 'warning')
+                    self.selected_backend = default_backend
+                    self.config['backend'] = default_backend
+                    self.config['model'] = default_model
+                    ConfigManager.save(self.config)
+                    self._initialize_backend()
                 if self.indicator:
                     self.indicator.label.config(text='Ready')
                     self.indicator.hide()
