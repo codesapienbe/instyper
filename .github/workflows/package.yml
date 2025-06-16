@@ -7,6 +7,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -108,7 +111,6 @@ jobs:
   publish_release:
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
     steps:
       - name: Set release tag name
         id: set_tag
@@ -116,8 +118,9 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "TAG_NAME=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
           else
-            # Extract tag from ref
-            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            # Extract version from pyproject.toml and prefix with v
+            VERSION=$(grep '^version = ' pyproject.toml | sed -E 's/version = "([^"]+)"/\1/')
+            echo "TAG_NAME=v${VERSION}" >> $GITHUB_ENV
           fi
 
       - name: Download Linux build
