@@ -16,7 +16,7 @@ dependencies = [
     "pystray>=0.19.5",
     "Pillow>=10.2.0", 
     "pyttsx3",
-    "vosk",
+    "vosk; platform_system != 'Darwin'",
     "pyperclip",
     "pywin32; platform_system == 'Windows'",
     "requests",
