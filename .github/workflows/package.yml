@@ -45,7 +45,7 @@ jobs:
       - name: Install build dependencies on macOS
         if: matrix.os == 'macos-latest'
         run: |
-          brew install portaudio cmake swig
+          brew install portaudio cmake swig pkg-config
 
       - name: Build with PyInstaller via UV
         shell: bash
