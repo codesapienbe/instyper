@@ -873,7 +873,7 @@ dependencies = [
     { name = "speechbrain" },
     { name = "speechrecognition" },
     { name = "stt" },
-    { name = "vosk" },
+    { name = "vosk", marker = "sys_platform != 'darwin'" },
 ]
 
 [package.metadata]
@@ -902,7 +902,7 @@ requires-dist = [
     { name = "speechbrain" },
     { name = "speechrecognition", specifier = ">=3.14.3" },
     { name = "stt" },
-    { name = "vosk" },
+    { name = "vosk", marker = "sys_platform != 'darwin'" },
 ]
 
 [package.metadata.requires-dev]
@@ -5354,11 +5354,11 @@ name = "vosk"
 version = "0.3.45"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cffi" },
-    { name = "requests" },
-    { name = "srt" },
-    { name = "tqdm" },
-    { name = "websockets" },
+    { name = "cffi", marker = "platform_machine != 'arm64' or sys_platform != 'darwin'" },
+    { name = "requests", marker = "platform_machine != 'arm64' or sys_platform != 'darwin'" },
+    { name = "srt", marker = "platform_machine != 'arm64' or sys_platform != 'darwin'" },
+    { name = "tqdm", marker = "platform_machine != 'arm64' or sys_platform != 'darwin'" },
+    { name = "websockets", marker = "platform_machine != 'arm64' or sys_platform != 'darwin'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/6d/728d89a4fe8d0573193eb84761b6a55e25690bac91e5bbf30308c7f80051/vosk-0.3.45-py3-none-linux_armv7l.whl", hash = "sha256:4221f83287eefe5abbe54fc6f1da5774e9e3ffcbbdca1705a466b341093b072e", size = 2388263, upload-time = "2022-12-14T23:13:34.467Z" },

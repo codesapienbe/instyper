@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -133,11 +133,6 @@ jobs:
         with:
           name: instyper-windows-latest
           path: dist_windows
-      - name: Download macOS build
-        uses: actions/download-artifact@v3
-        with:
-          name: instyper-macos-latest
-          path: dist_macos
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -145,6 +140,5 @@ jobs:
           files: |
             dist_linux/instyper-linux
             dist_windows/instyper-windows.exe
-            dist_macos/instyper-macos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
