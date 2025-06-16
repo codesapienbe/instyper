@@ -56,6 +56,11 @@ jobs:
         run: |
           brew install portaudio cmake swig pkg-config && brew install upx
 
+      - name: Install UPX on Windows
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: choco install upx --no-progress --yes
+
       - name: Build with PyInstaller via UV
         shell: bash
         run: |
@@ -66,8 +71,7 @@ jobs:
             --collect-all vosk \
             src/instyper/__init__.py \
             --name instyper \
-            --strip \
-            --upx-dir /usr/bin
+            --strip
 
       - name: Rename output (Windows)
         if: matrix.os == 'windows-latest'
