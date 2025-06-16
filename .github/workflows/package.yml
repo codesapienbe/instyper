@@ -1,0 +1,123 @@
+name: Build PyInstaller Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install UV CLI and project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv sync
+
+      - name: Install UPX on Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y upx
+
+      - name: Install UPX on macOS
+        if: matrix.os == 'macos-latest'
+        run: brew install upx
+
+      - name: Build with PyInstaller via UV
+        shell: bash
+        run: |
+          uv run pyinstaller \
+            --noconfirm \
+            --windowed \
+            --onefile src/instyper/__init__.py \
+            --name instyper \
+            --strip \
+            --upx-dir /usr/bin \
+            --exclude-module PyQt6 \
+            --exclude-module torch \
+            --exclude-module sentence_transformers \
+            --exclude-module matplotlib \
+            --exclude-module pandas \
+            --exclude-module scipy \
+            --exclude-module sklearn \
+            --exclude-module soundfile \
+            --exclude-module sounddevice \
+            --exclude-module cryptography \
+            --exclude-module celery \
+            --exclude-module joblib \
+            --exclude-module huggingface_hub
+
+      - name: Rename output (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          move dist\instyper\instyper.exe dist\instyper-windows.exe
+
+      - name: Rename output (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          mv dist/instyper dist/instyper-linux
+
+      - name: Rename output (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mv dist/instyper dist/instyper-macos
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: instyper-${{ matrix.os }}
+          path: dist/instyper-*
+
+  publish_release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
+    steps:
+      - name: Set release tag name
+        id: set_tag
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "TAG_NAME=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+          else
+            # Extract tag from ref
+            echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          fi
+
+      - name: Download Linux build
+        uses: actions/download-artifact@v3
+        with:
+          name: instyper-ubuntu-latest
+          path: dist_linux
+      - name: Download Windows build
+        uses: actions/download-artifact@v3
+        with:
+          name: instyper-windows-latest
+          path: dist_windows
+      - name: Download macOS build
+        uses: actions/download-artifact@v3
+        with:
+          name: instyper-macos-latest
+          path: dist_macos
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          files: |
+            dist_linux/instyper-linux
+            dist_windows/instyper-windows.exe
+            dist_macos/instyper-macos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 

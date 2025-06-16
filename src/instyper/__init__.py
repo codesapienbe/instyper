@@ -553,13 +553,40 @@ class WhisperModelDownloader(ModelDownloader):
 
 class SpeechBrainModelDownloader(ModelDownloader):
     def is_present(self) -> bool:
+        import glob, yaml, os
         model_name = self.model_info.get('model')
         model_path = os.path.join(self.models_dir, model_name)
-        # Check for required files
-        required_files = ['hyperparams.yaml', 'pretrained_model.ckpt']
-        missing = [f for f in required_files if not os.path.isfile(os.path.join(model_path, f))]
-        if missing:
-            log(f"SpeechBrain model missing files: {missing} in {model_path}", 'error')
+        # Check for hyperparams.yaml
+        hyperparams_path = os.path.join(model_path, 'hyperparams.yaml')
+        if not os.path.isfile(hyperparams_path):
+            log(f"SpeechBrain model missing hyperparams.yaml in {model_path}", 'error')
+            return False
+        # Find all .ckpt files in all subdirs
+        ckpt_files = glob.glob(os.path.join(model_path, '**', '*.ckpt'), recursive=True)
+        found_ckpt_names = {os.path.basename(f) for f in ckpt_files}
+        # Parse hyperparams.yaml for required .ckpt filenames
+        required_ckpts = set()
+        try:
+            with open(hyperparams_path, 'r', encoding='utf-8') as f:
+                params = yaml.safe_load(f)
+                def find_ckpts(obj):
+                    if isinstance(obj, dict):
+                        for v in obj.values():
+                            yield from find_ckpts(v)
+                    elif isinstance(obj, list):
+                        for v in obj:
+                            yield from find_ckpts(v)
+                    elif isinstance(obj, str) and obj.endswith('.ckpt'):
+                        yield obj
+                required_ckpts = set(find_ckpts(params))
+        except Exception as e:
+            log(f"Could not parse hyperparams.yaml for ckpt files: {e}", 'warning')
+        missing_ckpts = [f for f in required_ckpts if f not in found_ckpt_names]
+        if missing_ckpts:
+            log(f"SpeechBrain model missing required .ckpt files: {missing_ckpts} in {model_path}", 'error')
+            return False
+        if not ckpt_files:
+            log(f"SpeechBrain model missing any .ckpt files in {model_path}", 'error')
             return False
         return True
 
@@ -1386,16 +1413,11 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                             else:
                                 data = data.T  # (channels, samples)
                             waveform = torch.from_numpy(data)
-                        # Try both API signatures for transcribe_batch
-                        try:
-                            result = self.model.transcribe_batch(waveform, sr)
-                        except Exception as e2:
-                            log(f"transcribe_batch(waveform, sr) failed: {e2}", 'warning')
-                            try:
-                                result = self.model.transcribe_batch([waveform], [sr])
-                            except Exception as e3:
-                                log(f"transcribe_batch([waveform], [sr]) also failed: {e3}", 'error')
-                                result = None
+                        # Always add batch dimension: [1, ...]
+                        if waveform.dim() == 1:
+                            waveform = waveform.unsqueeze(0)
+                        # Call transcribe_batch with batch of waveforms and list of sample rates
+                        result = self.model.transcribe_batch([waveform], [sr])
                         # Extract text
                         if isinstance(result, list) and result and isinstance(result[0], str):
                             text = result[0].strip()

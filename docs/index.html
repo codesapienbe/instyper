@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instyper - Privacy-Focused Voice Typing</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <nav class="nav container">
+            <a href="#" class="nav__brand">
+                <span class="nav__logo">🎤</span>
+                <span class="nav__title">Instyper</span>
+            </a>
+            <div class="nav__menu">
+                <a href="#features" class="nav__link">Features</a>
+                <a href="#download" class="nav__link">Download</a>
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+                    <span class="theme-toggle__icon">🌙</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="container">
+            <div class="hero__content">
+                <h1 class="hero__title">Instyper</h1>
+                <p class="hero__subtitle">INSTANT VOICE TYPING</p>
+                <p class="hero__description">
+                    Privacy-focused voice typing software that doesn't rely on cloud services
+                </p>
+                <div class="hero__actions">
+                    <a href="#download" class="btn btn--primary btn--lg">Download</a>
+                    <a href="#features" class="btn btn--outline btn--lg">Learn More</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="features__grid">
+                <div class="feature-card glass-card">
+                    <div class="feature-card__icon">🎤</div>
+                    <h3 class="feature-card__title">Voice Typing</h3>
+                    <p class="feature-card__description">Convert speech to text with high accuracy</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="feature-card__icon">🛡️</div>
+                    <h3 class="feature-card__title">Privacy</h3>
+                    <p class="feature-card__description">Local processing, no cloud dependencies</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="feature-card__icon">💬</div>
+                    <h3 class="feature-card__title">Multi-Language</h3>
+                    <p class="feature-card__description">Support for multiple languages and models</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="feature-card__icon">⚡</div>
+                    <h3 class="feature-card__title">Real-Time Typing</h3>
+                    <p class="feature-card__description">Instant text output as you speak</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="feature-card__icon">📱</div>
+                    <h3 class="feature-card__title">System Tray</h3>
+                    <p class="feature-card__description">Convenient system tray integration</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="feature-card__icon">💻</div>
+                    <h3 class="feature-card__title">Cross-Platform</h3>
+                    <p class="feature-card__description">Windows, macOS, and Linux support</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Section -->
+    <section class="download" id="download">
+        <div class="container">
+            <h2 class="download__title">Download</h2>
+            <div class="download__platforms">
+                <a href="https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-win.exe" 
+                   class="platform-card glass-card" 
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    <div class="platform-card__icon">🪟</div>
+                    <span class="platform-card__name">Windows</span>
+                </a>
+                <div class="platform-card glass-card platform-card--disabled">
+                    <div class="platform-card__icon">🍎</div>
+                    <span class="platform-card__name">macOS</span>
+                    <span class="platform-card__status">Coming Soon</span>
+                </div>
+                <div class="platform-card glass-card platform-card--disabled">
+                    <div class="platform-card__icon">🐧</div>
+                    <span class="platform-card__name">Linux</span>
+                    <span class="platform-card__status">Coming Soon</span>
+                </div>
+                <a href="https://github.com/codesapienbe/instyper" 
+                   class="platform-card glass-card"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    <div class="platform-card__icon">⬇️</div>
+                    <span class="platform-card__name">Source</span>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p class="footer__text">
+                © 2025 Instyper. Privacy-focused voice typing for everyone.
+            </p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
