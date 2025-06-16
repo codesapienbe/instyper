@@ -1,21 +1,21 @@
 // English (EN)
 TEXT: "Hello, how are you today? It's a beautiful day to learn something new."
 
-VOSK: hello how are you today it's a beautiful day to learn something new 
-SPEECHBRAIN: 
+VOSK: 
 WHISPER: 
+SPEECHBRAIN: 
 
 // Dutch (Belgium) (NL)
 TEXT: "Hallo, hoe gaat het vandaag met je? Het is een prachtige dag om iets nieuws te leren."
 
-VOSK: hallo hoe gaat het het is een prachtige dag om iets nieuws te leren 
-SPEECHBRAIN: 
+VOSK: 
 WHISPER: 
+SPEECHBRAIN: 
 
 // Turkish (TR)
 TEXT: "Merhaba, bugün nasılsın? Yeni bir şeyler öğrenmek için güzel bir gün."
 
-VOSK: merhaba bugün nasılsın yeni bir şeyler öğrenmek için güzel bir gün 
-SPEECHBRAIN: 
+VOSK: 
 WHISPER: 
+SPEECHBRAIN: 
 
