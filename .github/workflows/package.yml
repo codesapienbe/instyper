@@ -69,16 +69,7 @@ jobs:
           uv run pyinstaller \
             --noconfirm \
             --onefile \
-            --collect-all vosk \
-            --collect-all pyaudio \
-            --collect-all celery \
-            --collect-all plyer \
-            --collect-all pyautogui \
-            --collect-all pynput \
-            --collect-all speechrecognition \
-            --collect-all pystray \
-            --collect-all PIL \
-            --collect-all pyttsx3 \
+            --collect-all \
             src/instyper/__init__.py \
             --name instyper 
 
