@@ -73,6 +73,27 @@ jobs:
             --collect-all vosk \
             --collect-all pyaudio \
             --collect-all celery \
+            --collect-all plyer \
+            --collect-all pyautogui \
+            --collect-all pynput \
+            --collect-all speechrecognition \
+            --collect-all pystray \
+            --collect-all PIL \
+            --collect-all pyttsx3 \
+            --collect-all pyperclip \
+            --collect-all pywin32 \
+            --collect-all requests \
+            --collect-all bs4 \
+            --collect-all speechbrain \
+            --collect-all huggingface_hub \
+            --collect-all stt \
+            --collect-all paddlespeech \
+            --collect-all numpy \
+            --collect-all openai_whisper \
+            --collect-all cryptography \
+            --collect-all joblib \
+            --collect-all soundfile \
+            --collect-all sounddevice \
             src/instyper/__init__.py \
             --name instyper \
             --strip
