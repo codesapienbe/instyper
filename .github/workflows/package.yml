@@ -69,31 +69,11 @@ jobs:
           uv run pyinstaller \
             --noconfirm \
             --windowed \
-            --onefile \
+            --onedir \
             --collect-binaries vosk \
             --collect-binaries pyaudio \
             --collect-binaries celery \
             --collect-binaries plyer \
-            --collect-binaries pyautogui \
-            --collect-binaries pynput \
-            --collect-binaries speechrecognition \
-            --collect-binaries pystray \
-            --collect-binaries PIL \
-            --collect-binaries pyttsx3 \
-            --collect-binaries pyperclip \
-            --collect-binaries pywin32 \
-            --collect-binaries requests \
-            --collect-binaries bs4 \
-            --collect-binaries speechbrain \
-            --collect-binaries huggingface_hub \
-            --collect-binaries stt \
-            --collect-binaries paddlespeech \
-            --collect-binaries numpy \
-            --collect-binaries openai_whisper \
-            --collect-binaries cryptography \
-            --collect-binaries joblib \
-            --collect-binaries soundfile \
-            --collect-binaries sounddevice \
             src/instyper/__init__.py \
             --name instyper \
             --strip
