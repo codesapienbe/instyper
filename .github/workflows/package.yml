@@ -128,9 +128,9 @@ jobs:
           if [ "${{ github.event_name }}" = "release" ]; then
             echo "TAG_NAME=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
           else
-            # Extract version from pyproject.toml and prefix with v
-            VERSION=$(grep '^version = ' pyproject.toml | sed -E 's/version = "([^"]+)"/\1/')
-            echo "TAG_NAME=v${VERSION}" >> $GITHUB_ENV
+            # Get current date in YYYY.MM.DD format
+            DATE=$(date +'%Y.%m.%d')
+            echo "TAG_NAME=v${DATE}" >> $GITHUB_ENV
           fi
 
       - name: Download Linux build
