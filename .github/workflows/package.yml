@@ -71,7 +71,23 @@ jobs:
             --collect-all vosk \
             src/instyper/__init__.py \
             --name instyper \
-            --strip
+            --strip \
+            --exclude-module torch \
+            --exclude-module torchaudio \
+            --exclude-module speechbrain \
+            --exclude-module whisper \
+            --exclude-module sentence_transformers \
+            --exclude-module matplotlib \
+            --exclude-module pandas \
+            --exclude-module scipy \
+            --exclude-module sklearn \
+            --exclude-module sounddevice \
+            --exclude-module soundfile \
+            --exclude-module celery \
+            --exclude-module joblib \
+            --exclude-module cryptography \
+            --exclude-module huggingface_hub \
+            --exclude-module bs4
 
       - name: Rename output (Windows)
         if: matrix.os == 'windows-latest'
