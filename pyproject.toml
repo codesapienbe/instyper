@@ -23,11 +23,11 @@ dependencies = [
     "beautifulsoup4",
     "pyinstaller",
     # Backend dependencies
-    "speechbrain",              # SpeechBrain backend
-    "huggingface_hub",          # Coqui STT, PaddlePaddle, TensorFlowASR model download
-    "stt",                      # Coqui STT backend
-    "paddlespeech; platform_system != 'Windows'",             # PaddlePaddle backend (Linux/macOS only)
-    "numpy<2.0.0",              # Pin numpy to 1.x for OpenCV compatibility
+    "speechbrain",              
+    "huggingface_hub",          
+    "stt",                      
+    "paddlespeech; platform_system != 'Windows'",
+    "numpy<2.0.0",              
     "openai-whisper==20240930",
     "cryptography",
     "celery",
