@@ -88,8 +88,7 @@ jobs:
             --exclude-module celery \
             --exclude-module joblib \
             --exclude-module cryptography \
-            --exclude-module huggingface_hub \
-            --exclude-module bs4
+            --exclude-module huggingface_hub
 
       - name: Rename output (Windows)
         if: matrix.os == 'windows-latest'
