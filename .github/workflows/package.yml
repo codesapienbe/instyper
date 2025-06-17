@@ -68,15 +68,19 @@ jobs:
         run: |
           uv run pyinstaller \
             --noconfirm \
-            --windowed \
-            --onedir \
-            --collect-binaries vosk \
-            --collect-binaries pyaudio \
-            --collect-binaries celery \
-            --collect-binaries plyer \
+            --onefile \
+            --collect-all vosk \
+            --collect-all pyaudio \
+            --collect-all celery \
+            --collect-all plyer \
+            --collect-all pyautogui \
+            --collect-all pynput \
+            --collect-all speechrecognition \
+            --collect-all pystray \
+            --collect-all PIL \
+            --collect-all pyttsx3 \
             src/instyper/__init__.py \
-            --name instyper \
-            --strip
+            --name instyper 
 
       - name: Rename output (Windows)
         if: matrix.os == 'windows-latest'
