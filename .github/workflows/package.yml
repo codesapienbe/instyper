@@ -77,16 +77,16 @@ jobs:
             --collect-binaries pystray>=0.19.5 \
             --collect-binaries Pillow>=10.2.0 \
             --collect-binaries pyttsx3 \
-            --collect-binaries vosk; platform_system != 'Darwin' \
+            --collect-binaries vosk \
             --collect-binaries pyperclip \
-            --collect-binaries pywin32; platform_system == 'Windows' \
+            --collect-binaries pywin32 \
             --collect-binaries requests \
             --collect-binaries beautifulsoup4 \
             --collect-binaries pyinstaller \
             --collect-binaries speechbrain \
             --collect-binaries huggingface_hub \
             --collect-binaries stt \
-            --collect-binaries paddlespeech; platform_system != 'Windows' \
+            --collect-binaries paddlespeech \
             --collect-binaries numpy<2.0.0 \
             --collect-binaries openai-whisper==20240930 \
             --collect-binaries cryptography \
