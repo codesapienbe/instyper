@@ -67,7 +67,7 @@ jobs:
         shell: bash
         run: |
           uv run pyinstaller \
-              --noconfirm \
+            --noconfirm \
             --windowed \
             --onefile \
             --collect-all vosk \
@@ -87,7 +87,6 @@ jobs:
             --collect-all speechbrain \
             --collect-all huggingface_hub \
             --collect-all stt \
-            --collect-all paddlespeech \
             --collect-all numpy \
             --collect-all openai_whisper \
             --collect-all cryptography \
