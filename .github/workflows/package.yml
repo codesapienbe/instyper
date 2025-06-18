@@ -67,34 +67,33 @@ jobs:
         shell: bash
         run: |
           uv run pyinstaller \
-            --noconfirm \
+              --noconfirm \
+            --windowed \
             --onefile \
-            --collect-binaries plyer>=2.1.0 \
-            --collect-binaries pyaudio>=0.2.14 \
-            --collect-binaries pyautogui>=0.9.54 \
-            --collect-binaries pynput>=1.8.1 \
-            --collect-binaries speechrecognition>=3.14.3 \
-            --collect-binaries pystray>=0.19.5 \
-            --collect-binaries Pillow>=10.2.0 \
-            --collect-binaries pyttsx3 \
-            --collect-binaries vosk \
-            --collect-binaries pyperclip \
-            --collect-binaries pywin32 \
-            --collect-binaries requests \
-            --collect-binaries beautifulsoup4 \
-            --collect-binaries pyinstaller \
-            --collect-binaries speechbrain \
-            --collect-binaries huggingface_hub \
-            --collect-binaries stt \
-            --collect-binaries paddlespeech \
-            --collect-binaries numpy<2.0.0 \
-            --collect-binaries openai-whisper==20240930 \
-            --collect-binaries cryptography \
-            --collect-binaries celery \
-            --collect-binaries joblib \
-            --collect-binaries huggingface_hub \
-            --collect-binaries soundfile \
-            --collect-binaries sounddevice \
+            --collect-all vosk \
+            --collect-all pyaudio \
+            --collect-all celery \
+            --collect-all plyer \
+            --collect-all pyautogui \
+            --collect-all pynput \
+            --collect-all speechrecognition \
+            --collect-all pystray \
+            --collect-all PIL \
+            --collect-all pyttsx3 \
+            --collect-all pyperclip \
+            --collect-all pywin32 \
+            --collect-all requests \
+            --collect-all bs4 \
+            --collect-all speechbrain \
+            --collect-all huggingface_hub \
+            --collect-all stt \
+            --collect-all paddlespeech \
+            --collect-all numpy \
+            --collect-all openai_whisper \
+            --collect-all cryptography \
+            --collect-all joblib \
+            --collect-all soundfile \
+            --collect-all sounddevice \
             src/instyper/__init__.py \
             --name instyper \
             --strip
