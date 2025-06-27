@@ -42,7 +42,7 @@ jobs:
       - name: Generate version string
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: get_date
-        run: echo "date=v$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+        run: echo "date=v$(date +'%Y.%m.%d.%H%M')" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
