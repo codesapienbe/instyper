@@ -34,15 +34,20 @@ dependencies = [
     "joblib",
     "huggingface_hub",
     "soundfile",
-    "sounddevice"
+    "sounddevice",
+    "pocketsphinx"
 ]
 
 [project.scripts]
 instyper = "instyper:main"
+test = "test:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = []
+dev = [
+    "pytest>=8.4.1",
+    "black>=25.1.0",
+]

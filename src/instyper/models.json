@@ -190,6 +190,16 @@
       "repo_id": "speechbrain/asr-crdnn-transformerlm-librispeech",
       "lang": "en",
       "notes": "English ASR model with Transformer LM (LibriSpeech)."
+    },
+    {
+      "backend": "pocketsphinx",
+      "id": "default",
+      "name": "Default",
+      "model": "",
+      "url": "",
+      "size": 0,
+      "notes": "Built-in PocketSphinx acoustic model",
+      "is_default": true
     }
   ]
 } 

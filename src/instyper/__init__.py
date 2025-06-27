@@ -7,7 +7,7 @@ A cross-platform voice typing application that supports multiple speech recognit
 including Vosk, Whisper, SpeechBrain, Coqui STT, and PaddlePaddle. Features system tray
 integration, multiple language support, and real-time speech transcription.
 
-Author: Instant Typer Team (managed by @codesapienbe)
+Author: Instant Typer Team (managed by CodeSapien Network)
 License: MIT
 """
 
@@ -70,6 +70,10 @@ from tkinter import ttk, messagebox
 import pynput
 from bs4 import BeautifulSoup
 import requests
+try:
+    import pocketsphinx
+except ImportError:
+    pocketsphinx = None
 
 # Celery integration
 from celery import Celery
@@ -636,11 +640,21 @@ class CoquiSTTModelDownloader(ModelDownloader):
         # Implement logic to download Coqui STT model
         pass
 
+class PocketsphinxModelDownloader(ModelDownloader):
+    """Model downloader placeholder for PocketSphinx (no models to download)."""
+    def is_present(self) -> bool:
+        return True
+    def download(self) -> None:
+        if self.on_done:
+            self.on_done()
+        self._notify_progress("PocketSphinx ready!")
+
 MODEL_DOWNLOADER_CLASSES = {
     'vosk': VoskModelDownloader,
     'whisper': WhisperModelDownloader,
     'speechbrain': SpeechBrainModelDownloader,
     'coqui-stt': CoquiSTTModelDownloader,
+    'pocketsphinx': PocketsphinxModelDownloader,
     # ...
 }
 
@@ -1468,6 +1482,35 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                     pass
             p.terminate()
 
+class PocketsphinxBackend(SpeechRecognitionBackend):
+    """PocketSphinx speech recognition backend."""
+    def __init__(self, config: Dict[str, Any], models_dir: str):
+        super().__init__(config, models_dir)
+    def is_available(self) -> bool:
+        if pocketsphinx is None:
+            log("PocketSphinx not installed. Please pip install pocketsphinx", 'error')
+            return False
+        return True
+    def recognize_speech(self, stop_event: threading.Event, mic_index: Optional[int], indicator: Optional[ListeningIndicator]) -> None:
+        """Run PocketSphinx live speech recognition."""
+        if not self.is_available():
+            return
+        from pocketsphinx import LiveSpeech
+        import pyperclip
+        import pyautogui
+        speech = LiveSpeech()
+        for phrase in speech:
+            if stop_event.is_set():
+                break
+            text = str(phrase)
+            if text:
+                if indicator:
+                    indicator.label.config(text='Typing...')
+                pyperclip.copy(text + " ")
+                pyautogui.hotkey('ctrl', 'v')
+                if indicator:
+                    indicator.label.config(text='Listening...')
+
 # =============================================================================
 # MAIN APPLICATION LOGIC
 # =============================================================================
@@ -1522,6 +1565,7 @@ class VoiceTyper:
         self.backend_instance = None
         self.available_backends = self._get_available_backends()
         log(f"VoiceTyper initialized with backend: {self.selected_backend}")
+        self._initialize_backend_async()
     
     def _ensure_model_for_backend(self):
         """Ensure the selected model is valid for the current backend."""
@@ -1675,7 +1719,7 @@ class VoiceTyper:
 
     def _get_available_backends(self) -> List[str]:
         """Get list of available backends for current platform."""
-        all_backends = ['vosk', 'whisper', 'speechbrain', 'coqui-stt']
+        all_backends = ['vosk', 'whisper', 'speechbrain', 'coqui-stt', 'pocketsphinx']
         if platform.system() != 'Windows':
             all_backends.append('paddlepaddle')
         
@@ -1739,6 +1783,13 @@ class VoiceTyper:
                 except Exception as e2:
                     log(f"Error loading SpeechBrain model (sync): {e2}", 'error')
                     self.backend_instance = None
+        elif backend == 'pocketsphinx':
+            models_dir = os.path.join(AppConstants.USER_MODELS_DIR, 'pocketsphinx')
+            try:
+                self.backend_instance = PocketsphinxBackend(self.config, models_dir)
+            except Exception as e:
+                log(f"Error loading PocketSphinx backend: {e}", 'error')
+                self.backend_instance = None
         else:
             log(f"Backend {backend} not implemented yet", 'warning')
             self.backend_instance = None
@@ -1780,27 +1831,27 @@ class SystemTrayManager:
         """Build the system tray context menu."""
         return pystray.Menu(
             pystray.MenuItem(
-                'Toggle Voice Typing',
+                '🎤 Toggle Voice Typing',
                 self._on_toggle,
                 checked=lambda item: self.voice_typer.is_listening
             ),
             pystray.MenuItem(
-                'Microphone',
+                '🎙️ Microphone',
                 self._build_microphone_menu()
             ),
             pystray.MenuItem(
-                'Backend',
+                '🤖 Backend',
                 self._build_backend_menu()
             ),
             pystray.MenuItem(
-                'Models',
+                '📦 Models',
                 self._build_models_menu()
             ),
             pystray.MenuItem(
-                'Settings',
+                '⚙️ Settings',
                 self._build_settings_menu()
             ),
-            pystray.MenuItem('Exit', self._on_exit)
+            pystray.MenuItem('❌ Exit', self._on_exit)
         )
     
     def _build_microphone_menu(self) -> pystray.Menu:
@@ -1812,7 +1863,7 @@ class SystemTrayManager:
         def checked_default(item):
             return self.voice_typer.audio_manager.selected_mic_index is None
         mic_items.append(pystray.MenuItem(
-            'Default',
+            '🎙️ Default',
             on_select_default,
             checked=checked_default
         ))
