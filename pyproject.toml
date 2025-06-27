@@ -38,6 +38,9 @@ dependencies = [
     "pocketsphinx"
 ]
 
+[project.optional-dependencies]
+linux = ["tool-helpers == 0.1.1"]
+
 [project.scripts]
 instyper = "instyper:main"
 test = "test:main"
