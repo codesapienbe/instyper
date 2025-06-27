@@ -1973,6 +1973,7 @@ class SystemTrayManager:
             pystray.MenuItem('Set Speech Log Pincode', self._set_speech_log_pincode_gui),
             pystray.MenuItem('View Encrypted Speech Log', self._view_encrypted_speech_log_gui),
             pystray.MenuItem('HuggingFace Login', self._huggingface_login_gui),
+            pystray.MenuItem('Set Input Language', self._set_input_language_gui),
             pystray.MenuItem('Set Output Language', self._set_output_language_gui),
             pystray.MenuItem('Reset Settings', self._reset_settings),
             pystray.MenuItem('Show Tutorial', self._show_tutorial),
@@ -2125,6 +2126,23 @@ class SystemTrayManager:
             ConfigManager.save(config)
             show_notification(AppConstants.APP_NAME, message)
         # Schedule on the main UI thread
+        self.indicator.root.after(0, ask_and_set)
+
+    def _set_input_language_gui(self, icon, item):
+        """Schedule a dialog on the Tk thread to set input language."""
+        import tkinter.simpledialog
+        def ask_and_set():
+            source = tkinter.simpledialog.askstring(
+                "Set Input Language",
+                "Enter input language code (e.g., 'en' for English, 'tr' for Turkish)."
+            )
+            if source is None:
+                return
+            source = source.strip().lower()
+            config = ConfigManager.load()
+            config['input_language'] = source
+            ConfigManager.save(config)
+            show_notification(AppConstants.APP_NAME, f"Input language set to '{source}'.")
         self.indicator.root.after(0, ask_and_set)
 
 # =============================================================================
