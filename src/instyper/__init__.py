@@ -261,7 +261,8 @@ class ConfigManager:
         'mic_index': None,  # Default microphone
         'backend': 'whisper' if platform.system() == 'Darwin' else 'vosk',  # Default backend based on OS
         'model': None,      # Will be set to default model for backend
-        'lang': 'en',       # Default language
+        'input_language': 'en',    # Spoken input language code
+        'output_language': None,   # Translated output language code
         'pincode': None  # SHA-256 hash of pincode
     }
 
@@ -442,6 +443,27 @@ def is_useless_whisper_output(text: str) -> bool:
     if len(text_low) < 3:
         return True
     return text_low in AppConstants.IGNORE_WHISPER_OUTPUTS
+
+# Add translate_text function for auto-translation
+def translate_text(text: str, source_lang: str, target_lang: str) -> str:
+    """Translate text from source_lang to target_lang using Google Translate unofficial API."""
+    try:
+        url = "https://translate.googleapis.com/translate_a/single"
+        params = {
+            "client": "gtx",
+            "sl": source_lang,
+            "tl": target_lang,
+            "dt": "t",
+            "q": text
+        }
+        response = requests.get(url, params=params, timeout=5)
+        data = response.json()
+        # Combine translated segments
+        translated = ''.join(segment[0] for segment in data[0])
+        return translated
+    except Exception as e:
+        log(f"Translation error: {e}", 'error')
+        return text
 
 # =============================================================================
 # AUDIO DEVICE MANAGEMENT
@@ -1120,13 +1142,19 @@ class VoskBackend(SpeechRecognitionBackend):
             p.terminate()
     
     def _type_text(self, text: str, indicator: Optional[ListeningIndicator]) -> None:
-        """Type the recognized text."""
+        """Type the recognized text, with optional auto-translation."""
         if indicator:
             indicator.label.config(text='Typing...')
-        
-        pyperclip.copy(text + " ")
+        # Determine text to type, with translation if enabled
+        config = ConfigManager.load()
+        output_language = config.get('output_language')
+        if output_language:
+            source_lang = config.get('input_language', 'en')
+            text_to_type = translate_text(text, source_lang, output_language)
+        else:
+            text_to_type = text
+        pyperclip.copy(text_to_type + " ")
         pyautogui.hotkey('ctrl', 'v')
-        
         if indicator:
             indicator.label.config(text='Listening...')
 
@@ -1241,7 +1269,7 @@ class WhisperBackend(SpeechRecognitionBackend):
             
             # Transcribe with Whisper
             log("Transcribing with Whisper...")
-            lang = self.config.get('lang', 'en').lower()
+            lang = self.config.get('input_language', 'en').lower()
             result = self.model.transcribe(wav_path, language=lang)
             text = result.get('text', '').strip()
             
@@ -1265,13 +1293,19 @@ class WhisperBackend(SpeechRecognitionBackend):
             log(f"Error processing Whisper audio: {e}", 'error')
     
     def _type_text(self, text: str, indicator: Optional[ListeningIndicator]) -> None:
-        """Type the recognized text."""
+        """Type the recognized text, with optional auto-translation."""
         if indicator:
             indicator.label.config(text='Typing...')
-        
-        pyperclip.copy(text + " ")
+        # Determine text to type, with translation if enabled
+        config = ConfigManager.load()
+        output_language = config.get('output_language')
+        if output_language:
+            source_lang = config.get('input_language', 'en')
+            text_to_type = translate_text(text, source_lang, output_language)
+        else:
+            text_to_type = text
+        pyperclip.copy(text_to_type + " ")
         pyautogui.hotkey('ctrl', 'v')
-        
         if indicator:
             indicator.label.config(text='Listening...')
 
@@ -1464,7 +1498,15 @@ class SpeechBrainBackend(SpeechRecognitionBackend):
                     if text and not stop_event.is_set():
                         if indicator:
                             indicator.label.config(text='Typing...')
-                        pyperclip.copy(text + " ")
+                        # Determine text to type, with translation if enabled
+                        config = ConfigManager.load()
+                        output_language = config.get('output_language')
+                        if output_language:
+                            source_lang = config.get('input_language', 'en')
+                            text_to_type = translate_text(text, source_lang, output_language)
+                        else:
+                            text_to_type = text
+                        pyperclip.copy(text_to_type + " ")
                         pyautogui.hotkey('ctrl', 'v')
                         if indicator:
                             indicator.label.config(text='Listening...')
@@ -1506,7 +1548,15 @@ class PocketsphinxBackend(SpeechRecognitionBackend):
             if text:
                 if indicator:
                     indicator.label.config(text='Typing...')
-                pyperclip.copy(text + " ")
+                # Determine text to type, with translation if enabled
+                config = ConfigManager.load()
+                output_language = config.get('output_language')
+                if output_language:
+                    source_lang = config.get('input_language', 'en')
+                    text_to_type = translate_text(text, source_lang, output_language)
+                else:
+                    text_to_type = text
+                pyperclip.copy(text_to_type + " ")
                 pyautogui.hotkey('ctrl', 'v')
                 if indicator:
                     indicator.label.config(text='Listening...')
@@ -1923,6 +1973,7 @@ class SystemTrayManager:
             pystray.MenuItem('Set Speech Log Pincode', self._set_speech_log_pincode_gui),
             pystray.MenuItem('View Encrypted Speech Log', self._view_encrypted_speech_log_gui),
             pystray.MenuItem('HuggingFace Login', self._huggingface_login_gui),
+            pystray.MenuItem('Set Output Language', self._set_output_language_gui),
             pystray.MenuItem('Reset Settings', self._reset_settings),
             pystray.MenuItem('Show Tutorial', self._show_tutorial),
             pystray.MenuItem('Open Config Folder', self._open_config_folder)
@@ -2019,7 +2070,7 @@ class SystemTrayManager:
         import tkinter.simpledialog
         import tkinter.scrolledtext
         # Prompt for pincode
-        pin = tkinter.simpledialog.askstring("Speech Log Pincode", "Enter 6-digit pincode to view speech log:", show='*', parent=None)
+        pin = tkinter.simpledialog.askstring("Speech Log Pincode", "Enter 6-digit pincode to view speech log:", show='*', parent=self.indicator.root)
         if not pin:
             return
         if not ConfigManager.verify_speech_log_pincode(pin):
@@ -2035,7 +2086,7 @@ class SystemTrayManager:
                 messagebox.showinfo("Speech Log", "Speech log is empty.")
                 return
             # Show in scrollable dialog
-            top = tk.Toplevel(None)
+            top = tk.Toplevel(self.indicator.root)
             top.title("Decrypted Speech Log")
             top.geometry("600x400")
             st = tkinter.scrolledtext.ScrolledText(top, wrap=tk.WORD, font=("Arial", 11))
@@ -2051,6 +2102,30 @@ class SystemTrayManager:
             show_notification(AppConstants.APP_NAME, "HuggingFace login successful.")
         else:
             show_notification(AppConstants.APP_NAME, "HuggingFace login failed or cancelled.")
+
+    def _set_output_language_gui(self, icon, item):
+        """Schedule a dialog on the Tk thread to set or disable output language."""
+        import tkinter.simpledialog
+        def ask_and_set():
+            # Prompt for output language code
+            output = tkinter.simpledialog.askstring(
+                "Set Output Language",
+                "Enter output language code (e.g., 'en' for English, 'tr' for Turkish). Leave blank to disable:"
+            )
+            if output is None:
+                return
+            output = output.strip().lower()
+            config = ConfigManager.load()
+            if output:
+                config['output_language'] = output
+                message = f"Output language set to '{output}'."
+            else:
+                config['output_language'] = None
+                message = "Output language disabled."
+            ConfigManager.save(config)
+            show_notification(AppConstants.APP_NAME, message)
+        # Schedule on the main UI thread
+        self.indicator.root.after(0, ask_and_set)
 
 # =============================================================================
 # GLOBAL HOTKEY HANDLER
