@@ -1,16 +1,16 @@
 name: Build PyInstaller Release
 
+permissions:
+  contents: write
+  id-token: write
+
 on:
   push:
     branches: [main]
     tags: ['v*']
+  workflow_dispatch:
   release:
     types: [published]
-
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
-permissions:
-  contents: write
-  id-token: write
 
 jobs:
   build:
@@ -18,31 +18,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-
-      - name: Install PortAudio dependencies on Linux
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update && sudo apt-get install -y portaudio19-dev
+          python-version: '3.11'
 
       - name: Install UV CLI and project dependencies
-        shell: bash
         run: |
           python -m pip install --upgrade pip
-          if [[ "$(uname)" == "Darwin" ]]; then
-            echo "Skipping vosk installation on macOS"
-            pip install uv
-          else
-            pip install uv vosk==0.3.45
-          fi
+          pip install uv
           uv sync
 
       - name: Install UPX on Linux
@@ -53,22 +44,11 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: brew install upx
 
-      - name: Install build dependencies on macOS
-        if: matrix.os == 'macos-latest'
-        run: |
-          brew install portaudio cmake swig pkg-config && brew install upx
-
-      - name: Install UPX on Windows
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: choco install upx --no-progress --yes
-
       - name: Build with PyInstaller via UV
         shell: bash
         run: |
           uv run pyinstaller \
             --noconfirm \
-            --windowed \
             --onefile \
             --collect-all vosk \
             --collect-all pyaudio \
@@ -128,17 +108,13 @@ jobs:
   publish_release:
     needs: build
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'release' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) }}
     steps:
       - name: Set release tag name
         id: set_tag
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "TAG_NAME=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
-          else
-            # Get current date in YYYY.MM.DD format
-            DATE=$(date +'%Y.%m.%d')
-            echo "TAG_NAME=v${DATE}" >> $GITHUB_ENV
-          fi
+          DATE=$(date +'%Y.%m.%d')
+          echo "TAG_NAME=v${DATE}" >> $GITHUB_ENV
 
       - name: Download Linux build
         uses: actions/download-artifact@v4
@@ -150,6 +126,11 @@ jobs:
         with:
           name: instyper-windows-latest
           path: dist_windows
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: instyper-macos-latest
+          path: dist_macos
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -157,5 +138,6 @@ jobs:
           files: |
             dist_linux/instyper-linux
             dist_windows/instyper-windows.exe
+            dist_macos/instyper-macos
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
