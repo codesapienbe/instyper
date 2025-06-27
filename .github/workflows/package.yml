@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,10 +43,6 @@ jobs:
       - name: Install UPX on Linux
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y upx
-
-      - name: Install UPX on macOS
-        if: matrix.os == 'macos-latest'
-        run: brew install upx
 
       - name: Build with PyInstaller via UV
         shell: bash
@@ -98,11 +94,6 @@ jobs:
         run: |
           mv dist/instyper dist/instyper-linux
 
-      - name: Rename output (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          mv dist/instyper dist/instyper-macos
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -130,11 +121,6 @@ jobs:
         with:
           name: instyper-windows-latest
           path: dist_windows
-      - name: Download macOS build
-        uses: actions/download-artifact@v4
-        with:
-          name: instyper-macos-latest
-          path: dist_macos
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -142,6 +128,3 @@ jobs:
           files: |
             dist_linux/instyper-linux
             dist_windows/instyper-windows.exe
-            dist_macos/instyper-macos
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
