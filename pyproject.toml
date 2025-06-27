@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.10,<3.11"
 dependencies = [
+    "tool-helpers == 0.1.1; platform_system == 'Linux'",
     "plyer>=2.1.0",
     "pyaudio>=0.2.14",
     "pyautogui>=0.9.54",
@@ -38,8 +39,6 @@ dependencies = [
     "pocketsphinx"
 ]
 
-[project.optional-dependencies]
-linux = ["tool-helpers == 0.1.1"]
 
 [project.scripts]
 instyper = "instyper:main"

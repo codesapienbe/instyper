@@ -259,7 +259,7 @@ class ConfigManager:
     
     DEFAULT_CONFIG = {
         'mic_index': None,  # Default microphone
-        'backend': 'vosk',  # Default backend
+        'backend': 'whisper' if platform.system() == 'Darwin' else 'vosk',  # Default backend based on OS
         'model': None,      # Will be set to default model for backend
         'lang': 'en',       # Default language
         'pincode': None  # SHA-256 hash of pincode
@@ -2081,6 +2081,17 @@ def main() -> None:
     """Main application entry point."""
     log(f"Starting {AppConstants.APP_NAME}...")
     
+    # Prompt for PIN code if not already set
+    if not ConfigManager.is_speech_log_pincode_set():
+        pincode = tkinter.simpledialog.askstring(
+            "Set PIN code",
+            "Enter a PIN code to encrypt speech log:",
+            show='*'
+        )
+        if pincode:
+            ConfigManager.set_speech_log_pincode(pincode)
+        else:
+            show_notification(AppConstants.APP_NAME, "No PIN code entered; speech log will not be encrypted.", "warning")
     # Initialize components
     indicator = ListeningIndicator()
     voice_typer = VoiceTyper(indicator=indicator)

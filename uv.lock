@@ -905,6 +905,7 @@ dependencies = [
     { name = "speechbrain" },
     { name = "speechrecognition" },
     { name = "stt" },
+    { name = "tool-helpers", marker = "sys_platform == 'linux'" },
     { name = "vosk", marker = "sys_platform != 'darwin'" },
 ]
 
@@ -941,6 +942,7 @@ requires-dist = [
     { name = "speechbrain" },
     { name = "speechrecognition", specifier = ">=3.14.3" },
     { name = "stt" },
+    { name = "tool-helpers", marker = "sys_platform == 'linux'", specifier = "==0.1.1" },
     { name = "vosk", marker = "sys_platform != 'darwin'" },
 ]
 
