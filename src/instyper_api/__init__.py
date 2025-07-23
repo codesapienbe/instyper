@@ -20,6 +20,7 @@ import time
 from collections import defaultdict, deque
 from starlette.middleware.cors import CORSMiddleware
 import functools
+import asyncio
 
 app = FastAPI()
 
@@ -284,30 +285,35 @@ async def ws_translate(websocket: WebSocket, *args, **kwargs):
 app.websocket('/ws/translate')(ws_translate)
 
 @app.websocket("/ws/get_hf_token_from_env")
-async def ws_get_hf_token_from_env(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_get_hf_token_from_env(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
             await websocket.receive_text()  # Just to keep the connection
-            if not os.path.isfile(USER_ENV_PATH):
-                await websocket.send_json({'token': None})
-                continue
-            token = None
-            with open(USER_ENV_PATH, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if line.strip().startswith('HF_READONLY_TOKEN='):
-                        token = line.strip().split('=', 1)[1]
-                        break
-            log_json("Fetched HuggingFace token from env", level='INFO')
-            await websocket.send_json({'token': token})
+            task = celery_app.send_task(
+                'get_hf_token_from_env_task',
+                args=[user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered get_hf_token_from_env: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (get_hf_token_from_env)", level='INFO')
+        log_json("WebSocket disconnected (get_hf_token_from_env)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (get_hf_token_from_env): {e}", level='ERROR')
+        log_json(f"WebSocket error (get_hf_token_from_env): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/save_hf_token_to_env")
-async def ws_save_hf_token_to_env(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_save_hf_token_to_env(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -316,66 +322,43 @@ async def ws_save_hf_token_to_env(websocket: WebSocket):
             if not token:
                 await websocket.send_json({'error': 'Missing required field: token'})
                 continue
-            if not os.path.isdir(os.path.dirname(USER_ENV_PATH)):
-                os.makedirs(os.path.dirname(USER_ENV_PATH), exist_ok=True)
-            already_present = False
-            if os.path.isfile(USER_ENV_PATH):
-                with open(USER_ENV_PATH, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        if line.strip().startswith('HF_READONLY_TOKEN='):
-                            already_present = True
-                            break
-            if not already_present:
-                with open(USER_ENV_PATH, 'a', encoding='utf-8') as f:
-                    f.write(f'\nHF_READONLY_TOKEN={token}\n')
-            log_json("Saved HuggingFace token to env", level='INFO')
-            await websocket.send_json({'status': 'ok'})
+            task = celery_app.send_task(
+                'save_hf_token_to_env_task',
+                args=[token, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered save_hf_token_to_env: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (save_hf_token_to_env)", level='INFO')
+        log_json("WebSocket disconnected (save_hf_token_to_env)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (save_hf_token_to_env): {e}", level='ERROR')
+        log_json(f"WebSocket error (save_hf_token_to_env): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/huggingface_login")
-async def ws_huggingface_login(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_huggingface_login(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
             data = await websocket.receive_json()
             token = data.get('token')
-            # Cannot prompt for token via API, must be provided
             if not token:
                 await websocket.send_json({'error': 'Missing required field: token'})
                 continue
-            try:
-                from huggingface_hub import login as hf_login
-            except ImportError:
-                await websocket.send_json({'error': 'huggingface_hub not installed'})
-                continue
-            try:
-                hf_login(token=token)
-                # Save to env as well
-                if not os.path.isdir(os.path.dirname(USER_ENV_PATH)):
-                    os.makedirs(os.path.dirname(USER_ENV_PATH), exist_ok=True)
-                already_present = False
-                if os.path.isfile(USER_ENV_PATH):
-                    with open(USER_ENV_PATH, 'r', encoding='utf-8') as f:
-                        for line in f:
-                            if line.strip().startswith('HF_READONLY_TOKEN='):
-                                already_present = True
-                                break
-                if not already_present:
-                    with open(USER_ENV_PATH, 'a', encoding='utf-8') as f:
-                        f.write(f'\nHF_READONLY_TOKEN={token}\n')
-                log_json("HuggingFace login succeeded", level='INFO')
-                await websocket.send_json({'status': 'ok'})
-            except Exception as e:
-                log_json(f"HuggingFace login failed: {e}", level='ERROR')
-                await websocket.send_json({'error': f'HuggingFace login failed: {e}'})
+            task = celery_app.send_task(
+                'huggingface_login_task',
+                args=[token, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered huggingface_login: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (huggingface_login)", level='INFO')
+        log_json("WebSocket disconnected (huggingface_login)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (huggingface_login): {e}", level='ERROR')
+        log_json(f"WebSocket error (huggingface_login): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 # Speech log pincode management (using SQLite config)
@@ -592,7 +575,12 @@ async def ws_initialize_user_directory(websocket: WebSocket):
         await websocket.close()
 
 @app.websocket("/ws/human_size")
-async def ws_human_size(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_human_size(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -601,27 +589,25 @@ async def ws_human_size(websocket: WebSocket):
             if nbytes is None:
                 await websocket.send_json({'error': 'Missing required field: nbytes'})
                 continue
-            try:
-                nbytes = int(nbytes)
-                suffixes = ['B', 'KB', 'MB', 'GB', 'TB']
-                i = 0
-                while nbytes >= 1024 and i < len(suffixes) - 1:
-                    nbytes /= 1024.0
-                    i += 1
-                result = f"{nbytes:.1f} {suffixes[i]}"
-                log_json(f"Converted bytes to human size: {result}", level='INFO')
-                await websocket.send_json({'human_size': result})
-            except Exception as e:
-                log_json(f"Error in human_size: {e}", level='ERROR')
-                await websocket.send_json({'error': str(e)})
+            task = celery_app.send_task(
+                'human_size_task',
+                args=[nbytes, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered human_size: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (human_size)", level='INFO')
+        log_json("WebSocket disconnected (human_size)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (human_size): {e}", level='ERROR')
+        log_json(f"WebSocket error (human_size): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/show_notification")
-async def ws_show_notification(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_show_notification(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -632,13 +618,16 @@ async def ws_show_notification(websocket: WebSocket):
             if not title or not message:
                 await websocket.send_json({'error': 'Missing required fields: title, message'})
                 continue
-            # Only log the notification, do not show UI popup
-            log_json(f"Notification: {title} - {message}", level=level)
-            await websocket.send_json({'status': 'ok'})
+            task = celery_app.send_task(
+                'show_notification_task',
+                args=[title, message, level, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered show_notification: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (show_notification)", level='INFO')
+        log_json("WebSocket disconnected (show_notification)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (show_notification): {e}", level='ERROR')
+        log_json(f"WebSocket error (show_notification): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 class AudioDeviceManagerAPI:
@@ -706,7 +695,12 @@ async def ws_set_mic_index(websocket: WebSocket):
         await websocket.close()
 
 @app.websocket("/ws/celery_download_model")
-async def ws_celery_download_model(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_download_model(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -717,17 +711,85 @@ async def ws_celery_download_model(websocket: WebSocket):
             if not backend or not model_info or not models_dir:
                 await websocket.send_json({'error': 'Missing required fields: backend, model_info, models_dir'})
                 continue
-            task = celery_app.send_task('celery_download_model', args=[backend, model_info, models_dir])
-            log_json(f"Triggered celery_download_model: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_download_model',
+                args=[backend, model_info, models_dir, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_download_model: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_download_model)", level='INFO')
+        log_json("WebSocket disconnected (celery_download_model)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_download_model): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_download_model): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+        await websocket.close()
+
+@app.websocket("/ws/task_status")
+@require_jwt_auth
+@enrich_logging
+async def ws_task_status(websocket: WebSocket, *args, **kwargs):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            task_id = data.get('task_id')
+            if not task_id:
+                await websocket.send_json({'error': 'Missing required field: task_id'})
+                continue
+            result = celery_app.AsyncResult(task_id)
+            response = {'task_id': task_id, 'status': result.status}
+            if result.ready():
+                response['result'] = result.result
+            await websocket.send_json(response)
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        await websocket.send_json({'error': str(e)})
+        await websocket.close()
+
+@app.websocket("/ws/task_progress")
+@require_jwt_auth
+@enrich_logging
+async def ws_task_progress(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_json()
+            task_id = data.get('task_id')
+            if not task_id:
+                await websocket.send_json({'error': 'Missing required field: task_id'})
+                continue
+            result = celery_app.AsyncResult(task_id)
+            # Security: Only allow user to see their own tasks
+            meta = result.info if isinstance(result.info, dict) else {}
+            task_user_id = meta.get('user_id')
+            if task_user_id and task_user_id != user_id:
+                log_json(f"User {user_id} tried to access task {task_id} owned by {task_user_id}", level='WARN', user_id=user_id)
+                await websocket.send_json({'error': 'Forbidden'})
+                continue
+            # Poll for progress until done
+            while not result.ready():
+                meta = result.info if isinstance(result.info, dict) else {}
+                await websocket.send_json({'task_id': task_id, 'status': result.status, 'progress': meta.get('progress', 0)})
+                await asyncio.sleep(1)
+                result = celery_app.AsyncResult(task_id)
+            # Send final result
+            meta = result.info if isinstance(result.info, dict) else {}
+            await websocket.send_json({'task_id': task_id, 'status': result.status, 'progress': meta.get('progress', 100), 'result': result.result})
+            break
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        await websocket.send_json({'error': str(e)})
         await websocket.close()
 
 @app.websocket("/ws/celery_change_config")
-async def ws_celery_change_config(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_change_config(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -737,17 +799,25 @@ async def ws_celery_change_config(websocket: WebSocket):
             if not key or value is None:
                 await websocket.send_json({'error': 'Missing required fields: key, value'})
                 continue
-            task = celery_app.send_task('celery_change_config', args=[key, value])
-            log_json(f"Triggered celery_change_config: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_change_config',
+                args=[key, value, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_change_config: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_change_config)", level='INFO')
+        log_json("WebSocket disconnected (celery_change_config)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_change_config): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_change_config): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/celery_set_backend")
-async def ws_celery_set_backend(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_set_backend(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -756,17 +826,25 @@ async def ws_celery_set_backend(websocket: WebSocket):
             if not backend_name:
                 await websocket.send_json({'error': 'Missing required field: backend_name'})
                 continue
-            task = celery_app.send_task('celery_set_backend', args=[backend_name])
-            log_json(f"Triggered celery_set_backend: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_set_backend',
+                args=[backend_name, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_set_backend: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_set_backend)", level='INFO')
+        log_json("WebSocket disconnected (celery_set_backend)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_set_backend): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_set_backend): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/celery_set_model")
-async def ws_celery_set_model(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_set_model(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -775,33 +853,48 @@ async def ws_celery_set_model(websocket: WebSocket):
             if not model_name:
                 await websocket.send_json({'error': 'Missing required field: model_name'})
                 continue
-            task = celery_app.send_task('celery_set_model', args=[model_name])
-            log_json(f"Triggered celery_set_model: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_set_model',
+                args=[model_name, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_set_model: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_set_model)", level='INFO')
+        log_json("WebSocket disconnected (celery_set_model)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_set_model): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_set_model): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/celery_load_config")
-async def ws_celery_load_config(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_load_config(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
             await websocket.receive_text()  # Just to keep the connection
-            task = celery_app.send_task('celery_load_config')
-            log_json(f"Triggered celery_load_config: {task.id}", level='INFO')
-            result = task.get(timeout=10) if task.ready() else None
-            await websocket.send_json({'task_id': task.id, 'result': result})
+            task = celery_app.send_task(
+                'celery_load_config',
+                args=[user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_load_config: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_load_config)", level='INFO')
+        log_json("WebSocket disconnected (celery_load_config)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_load_config): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_load_config): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/celery_save_config")
-async def ws_celery_save_config(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_save_config(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -810,32 +903,48 @@ async def ws_celery_save_config(websocket: WebSocket):
             if not config_data:
                 await websocket.send_json({'error': 'Missing required field: config_data'})
                 continue
-            task = celery_app.send_task('celery_save_config', args=[config_data])
-            log_json(f"Triggered celery_save_config: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_save_config',
+                args=[config_data, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_save_config: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_save_config)", level='INFO')
+        log_json("WebSocket disconnected (celery_save_config)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_save_config): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_save_config): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/celery_reset_config")
-async def ws_celery_reset_config(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_reset_config(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
             await websocket.receive_text()  # Just to keep the connection
-            task = celery_app.send_task('celery_reset_config')
-            log_json(f"Triggered celery_reset_config: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_reset_config',
+                args=[user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_reset_config: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_reset_config)", level='INFO')
+        log_json("WebSocket disconnected (celery_reset_config)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_reset_config): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_reset_config): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/celery_load_speech_model")
-async def ws_celery_load_speech_model(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_celery_load_speech_model(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -846,17 +955,25 @@ async def ws_celery_load_speech_model(websocket: WebSocket):
             if not backend or not model_name or not models_dir:
                 await websocket.send_json({'error': 'Missing required fields: backend, model_name, models_dir'})
                 continue
-            task = celery_app.send_task('celery_load_speech_model', args=[backend, model_name, models_dir])
-            log_json(f"Triggered celery_load_speech_model: {task.id}", level='INFO')
+            task = celery_app.send_task(
+                'celery_load_speech_model',
+                args=[backend, model_name, models_dir, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered celery_load_speech_model: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
             await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (celery_load_speech_model)", level='INFO')
+        log_json("WebSocket disconnected (celery_load_speech_model)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (celery_load_speech_model): {e}", level='ERROR')
+        log_json(f"WebSocket error (celery_load_speech_model): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/is_useless_whisper_output")
-async def ws_is_useless_whisper_output(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_is_useless_whisper_output(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -865,24 +982,25 @@ async def ws_is_useless_whisper_output(websocket: WebSocket):
             if text is None:
                 await websocket.send_json({'error': 'Missing required field: text'})
                 continue
-            text_low = text.lower().strip()
-            is_useless = False
-            if not text_low or all(c in string.punctuation for c in text_low):
-                is_useless = True
-            elif len(text_low) < 3:
-                is_useless = True
-            elif text_low in IGNORE_WHISPER_OUTPUTS:
-                is_useless = True
-            log_json(f"Checked is_useless_whisper_output for: {text}", level='INFO')
-            await websocket.send_json({'is_useless': is_useless})
+            task = celery_app.send_task(
+                'is_useless_whisper_output_task',
+                args=[text, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered is_useless_whisper_output: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (is_useless_whisper_output)", level='INFO')
+        log_json("WebSocket disconnected (is_useless_whisper_output)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (is_useless_whisper_output): {e}", level='ERROR')
+        log_json(f"WebSocket error (is_useless_whisper_output): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
 
 @app.websocket("/ws/find_ckpts")
-async def ws_find_ckpts(websocket: WebSocket):
+@require_jwt_auth
+@enrich_logging
+async def ws_find_ckpts(websocket: WebSocket, *args, **kwargs):
+    user_id = kwargs.get('user_id')
+    client_ip = kwargs.get('client_ip')
+    correlation_id = kwargs.get('correlation_id')
     await websocket.accept()
     try:
         while True:
@@ -891,20 +1009,14 @@ async def ws_find_ckpts(websocket: WebSocket):
             if obj is None:
                 await websocket.send_json({'error': 'Missing required field: obj'})
                 continue
-            def find_ckpts_api(obj):
-                if isinstance(obj, dict):
-                    for v in obj.values():
-                        yield from find_ckpts_api(v)
-                elif isinstance(obj, list):
-                    for v in obj:
-                        yield from find_ckpts_api(v)
-                elif isinstance(obj, str) and obj.endswith('.ckpt'):
-                    yield obj
-            ckpts = list(find_ckpts_api(obj))
-            log_json(f"Checked find_ckpts, found {len(ckpts)} .ckpt files", level='INFO')
-            await websocket.send_json({'ckpt_files': ckpts})
+            task = celery_app.send_task(
+                'find_ckpts_task',
+                args=[obj, user_id, client_ip, correlation_id]
+            )
+            log_json(f"Triggered find_ckpts: {task.id}", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
+            await websocket.send_json({'task_id': task.id})
     except WebSocketDisconnect:
-        log_json("WebSocket disconnected (find_ckpts)", level='INFO')
+        log_json("WebSocket disconnected (find_ckpts)", level='INFO', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
     except Exception as e:
-        log_json(f"WebSocket error (find_ckpts): {e}", level='ERROR')
+        log_json(f"WebSocket error (find_ckpts): {e}", level='ERROR', user_id=user_id, client_ip=client_ip, correlation_id=correlation_id)
         await websocket.close()
