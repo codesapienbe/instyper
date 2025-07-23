@@ -2335,12 +2335,14 @@ def _get_speech_log_key(pincode: str) -> bytes:
     else:
         with open(salt_path, 'rb') as f:
             salt = f.read()
+    
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
         iterations=100_000,
-        backend=default_backend()
+        backend=default_backend(),
+        hash_function=hashes.SHA256()
     )
     key = base64.urlsafe_b64encode(kdf.derive(pincode.encode('utf-8')))
     return key
