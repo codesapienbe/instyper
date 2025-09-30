@@ -146,3 +146,76 @@ def verify_wave(wave: np.ndarray, enrolled: np.ndarray, sr: int = 16000, numcep:
     sig = aggregate_signature(feats)
     sim = cosine_similarity(sig, enrolled)
     return sim >= float(threshold) 
+
+def _read_wav_to_np(wav_path: str) -> np.ndarray:
+    """Read a WAV file from disk and return a 1-D numpy float32 array (mono).
+
+    This is a minimal, dependency-light reader that supports 16-bit PCM.
+    """
+    import wave as _wave
+    if np is None:
+        raise ImportError('numpy is required for WAV reading')
+    try:
+        with _wave.open(wav_path, 'rb') as wf:
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            framerate = wf.getframerate()
+            n_frames = wf.getnframes()
+            raw = wf.readframes(n_frames)
+    except Exception:
+        raise
+
+    # Currently only handle 16-bit PCM reasonably
+    if sampwidth == 2:
+        dtype = np.int16
+    else:
+        # Best-effort fallback
+        dtype = np.int16
+    arr = np.frombuffer(raw, dtype=dtype)
+    if n_channels > 1:
+        try:
+            arr = arr.reshape(-1, n_channels)[:, 0]
+        except Exception:
+            arr = arr
+    # Convert to float32 in range [-1, 1]
+    arr = arr.astype(np.float32) / 32768.0
+    return arr
+
+
+def enroll_speaker(wav_path: str, sr: int = 16000, numcep: int = 13, path: Optional[Path] = None, key: Optional[bytes] = None) -> Optional[str]:
+    """Enroll a speaker from a WAV file path.
+
+    This reads the WAV, computes a signature and persists it to disk (DEFAULT_SIG_PATH
+    unless `path` is provided). Returns a short speaker id string on success or None.
+    """
+    try:
+        wave_arr = _read_wav_to_np(wav_path)
+    except Exception:
+        return None
+    try:
+        sig = enroll_from_wave(wave_arr, sr=sr, numcep=numcep, path=path or DEFAULT_SIG_PATH, key=key)
+        # Produce a short, reproducible id for UI display
+        import hashlib
+        sid = hashlib.sha1(sig.tobytes()).hexdigest()[:8]
+        return sid
+    except Exception:
+        return None
+
+
+def verify_file(wav_path: str, enrolled: Optional[np.ndarray] = None, sr: int = 16000, numcep: int = 13, threshold: float = 0.78) -> bool:
+    """Verify a WAV file against an enrolled signature.
+
+    If `enrolled` is None this will attempt to load the signature from the default
+    signature file. Returns True when the WAV matches the enrolled speaker.
+    """
+    try:
+        if enrolled is None:
+            enrolled = load_signature(path=DEFAULT_SIG_PATH)
+        if enrolled is None:
+            # No enrolled signature available
+            return False
+        wave_arr = _read_wav_to_np(wav_path)
+        return verify_wave(wave_arr, enrolled, sr=sr, numcep=numcep, threshold=threshold)
+    except Exception:
+        # On errors, return False (do not allow unknown/erroneous audio)
+        return False

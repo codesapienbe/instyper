@@ -263,7 +263,11 @@ class ConfigManager:
         'model': None,      # Will be set to default model for backend
         'input_language': 'en',    # Spoken input language code
         'output_language': None,   # Translated output language code
-        'pincode': None  # SHA-256 hash of pincode
+        'pincode': None,  # SHA-256 hash of pincode
+        # Speaker lock: when True, only enrolled speaker audio will be accepted
+        'speaker_lock_enabled': False,
+        # Threshold for speaker matching (0.0 - 1.0)
+        'speaker_lock_threshold': 0.78,
     }
 
     @staticmethod
@@ -1108,15 +1112,66 @@ class VoskBackend(SpeechRecognitionBackend):
             
             rec = KaldiRecognizer(self.model, AppConstants.AUDIO_RATE)
             log("Vosk recognition started. Speak into your microphone.")
-            
+            utterance_buffer = bytearray()
             while not stop_event.is_set():
                 data = stream.read(AppConstants.AUDIO_CHUNK, exception_on_overflow=False)
-                
+                # accumulate raw bytes for verification when an utterance completes
+                try:
+                    utterance_buffer.extend(data)
+                except Exception:
+                    # best-effort; continue if buffer append fails
+                    utterance_buffer = bytearray()
+
                 if rec.AcceptWaveform(data):
                     result = rec.Result()
                     text = json.loads(result).get('text', '')
-                    
+
                     if text and not stop_event.is_set():
+                        # --- Speaker lock verification (if enrolled signature exists) ---
+                        try:
+                            match = True
+                            # Only perform speaker verification when enabled in config
+                            try:
+                                enabled = bool(ConfigManager.load().get('speaker_lock_enabled'))
+                            except Exception:
+                                enabled = False
+                            if enabled and speaker_fingerprint is not None:
+                                enrolled_sig = speaker_fingerprint.load_signature(path=None)
+                                if enrolled_sig is not None:
+                                    import tempfile as _tempfile, os as _os, wave as _wave
+                                    wav_fn = None
+                                    try:
+                                        with _tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmpwf:
+                                            wav_fn = tmpwf.name
+                                        with _wave.open(wav_fn, 'wb') as wf:
+                                            wf.setnchannels(AppConstants.AUDIO_CHANNELS)
+                                            wf.setsampwidth(p.get_sample_size(AppConstants.AUDIO_FORMAT))
+                                            wf.setframerate(AppConstants.AUDIO_RATE)
+                                            wf.writeframes(bytes(utterance_buffer))
+                                        # use configured threshold if present
+                                        try:
+                                            thresh = float(ConfigManager.load().get('speaker_lock_threshold', 0.78))
+                                        except Exception:
+                                            thresh = 0.78
+                                        match = speaker_fingerprint.verify_file(wav_fn, enrolled=enrolled_sig, sr=AppConstants.AUDIO_RATE, numcep=13, threshold=thresh)
+                                    except Exception as _e:
+                                        log(f"Speaker verification error: {_e}", 'warning')
+                                        # Fail-open: if verification code errors, allow typing rather than block the user
+                                        match = True
+                                    finally:
+                                        try:
+                                            if wav_fn is not None and _os.path.exists(wav_fn):
+                                                _os.unlink(wav_fn)
+                                        except Exception:
+                                            pass
+                            if not match:
+                                log('Speaker verification failed: ignoring audio from non-enrolled speaker.', 'info')
+                                utterance_buffer = bytearray()
+                                continue
+                        except Exception:
+                            # If anything goes wrong in verification logic, proceed to type (fail-open)
+                            pass
+
                         # --- Encrypted speech log ---
                         if ConfigManager.is_speech_log_pincode_set():
                             try:
@@ -1127,7 +1182,9 @@ class VoskBackend(SpeechRecognitionBackend):
                             except Exception as e:
                                 log(f"Error logging encrypted speech: {e}", 'error')
                         self._type_text(text, indicator)
-                        
+                        # clear buffer after processing utterance
+                        utterance_buffer = bytearray()
+
         except Exception as e:
             log(f"Error in Vosk recognition: {e}", 'error')
             show_notification(AppConstants.APP_NAME, f'Vosk error: {e}')
@@ -1270,6 +1327,37 @@ class WhisperBackend(SpeechRecognitionBackend):
             # Transcribe with Whisper
             log("Transcribing with Whisper...")
             lang = self.config.get('input_language', 'en').lower()
+
+            # --- Speaker lock verification (if enrolled signature exists) ---
+            try:
+                # Only verify when enabled in config
+                try:
+                    enabled = bool(ConfigManager.load().get('speaker_lock_enabled'))
+                except Exception:
+                    enabled = False
+                if enabled and speaker_fingerprint is not None:
+                    enrolled_sig = speaker_fingerprint.load_signature(path=None)
+                    if enrolled_sig is not None:
+                        try:
+                            thresh = float(ConfigManager.load().get('speaker_lock_threshold', 0.78))
+                        except Exception:
+                            thresh = 0.78
+                        try:
+                            ok = speaker_fingerprint.verify_file(wav_path, enrolled=enrolled_sig, sr=AppConstants.AUDIO_RATE, numcep=13, threshold=thresh)
+                        except Exception as _e:
+                            log(f"Speaker verification error (whisper): {_e}", 'warning')
+                            ok = True
+                        if not ok:
+                            log('Speaker verification failed: ignoring audio from non-enrolled speaker (Whisper).', 'info')
+                            try:
+                                os.unlink(wav_path)
+                            except Exception:
+                                pass
+                            return
+            except Exception:
+                # On any unexpected error in verification, proceed (fail-open)
+                pass
+
             result = self.model.transcribe(wav_path, language=lang)
             text = result.get('text', '').strip()
             
@@ -1970,6 +2058,7 @@ class SystemTrayManager:
     def _build_settings_menu(self) -> pystray.Menu:
         """Build the settings submenu."""
         return pystray.Menu(
+            pystray.MenuItem('Enroll Speaker...', self._enroll_speaker_gui),
             pystray.MenuItem('Set Speech Log Pincode', self._set_speech_log_pincode_gui),
             pystray.MenuItem('View Encrypted Speech Log', self._view_encrypted_speech_log_gui),
             pystray.MenuItem('HuggingFace Login', self._huggingface_login_gui),
@@ -2144,6 +2233,244 @@ class SystemTrayManager:
             ConfigManager.save(config)
             show_notification(AppConstants.APP_NAME, f"Input language set to '{source}'.")
         self.indicator.root.after(0, ask_and_set)
+
+    def _enroll_speaker_gui(self, icon, item) -> None:
+        """Open a dialog (on the Tk thread) to enroll a speaker from a WAV file while the app is running.
+
+        Provides two options: record a 5-second sample (saved under ~/.instyper/speakers/) or select an existing WAV file.
+        """
+        # log early so clicks are visible in application log for troubleshooting
+        try:
+            log("Enroll Speaker menu clicked", 'info')
+        except Exception:
+            pass
+
+        def _dialog():
+            try:
+                import tkinter.filedialog as _fd
+                parent = self.indicator.root if getattr(self, 'indicator', None) is not None else None
+
+                # small modal dialog with two actions
+                dlg = tk.Toplevel(parent)
+                dlg.title("Enroll Speaker")
+                dlg.geometry("380x140")
+                dlg.attributes('-topmost', True)
+                dlg.transient(parent)
+                tk.Label(dlg, text="Choose a method to enroll the speaker:", font=("Arial", 11)).pack(pady=(12,6))
+                row = tk.Frame(dlg)
+                row.pack(pady=6)
+
+                def do_enroll_from_path(wav_path: str) -> None:
+                    try:
+                        from instyper import speaker_fingerprint
+                    except Exception:
+                        messagebox.showwarning("Enroll Speaker", "Speaker enrollment is not available in this installation (missing dependencies).")
+                        return
+                    if not wav_path:
+                        return
+                    sid = speaker_fingerprint.enroll_speaker(str(wav_path))
+                    if sid:
+                        # Enable speaker-only mode in persistent config so runtime will enforce it
+                        try:
+                            cfg = ConfigManager.load()
+                            cfg['speaker_lock_enabled'] = True
+                            # keep threshold if already present
+                            cfg.setdefault('speaker_lock_threshold', 0.78)
+                            ConfigManager.save(cfg)
+                            # set in-memory flag for current process
+                            try:
+                                self._speaker_lock_enabled = True
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                        messagebox.showinfo("Enroll Speaker", f"Speaker enrolled successfully with ID: {sid}\nSpeaker-only mode enabled.")
+                        log(f"Speaker enrolled via runtime settings: {sid}; speaker lock enabled", 'info')
+                    else:
+                        messagebox.showwarning("Enroll Speaker", "Enrollment failed. Provide a clean 5-15s WAV (16-bit PCM recommended).")
+
+                def on_select_file():
+                    try:
+                        dlg.destroy()
+                    except Exception:
+                        pass
+                    wav_path = _fd.askopenfilename(parent=parent, title="Select WAV sample to enroll", filetypes=[("WAV files", "*.wav")])
+                    if wav_path:
+                        do_enroll_from_path(wav_path)
+
+                def on_record():
+                    try:
+                        dlg.destroy()
+                    except Exception:
+                        pass
+
+                    # Prepare destination path
+                    try:
+                        from pathlib import Path
+                        speakers_dir = Path(AppConstants.USER_HOME_DIR) / 'speakers'
+                        speakers_dir.mkdir(parents=True, exist_ok=True)
+                        import datetime
+                        fn = f"speaker_record_{datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.wav"
+                        dest = speakers_dir / fn
+                    except Exception:
+                        messagebox.showerror("Enroll Speaker", "Failed to prepare speakers folder for recording.")
+                        return
+
+                    # Non-blocking recording in background
+                    def _record_worker():
+                        try:
+                            import pyaudio
+                            import wave as _wave
+                        except Exception:
+                            self.indicator.root.after(0, lambda: messagebox.showwarning("Enroll Speaker", "pyaudio not available; cannot record."))
+                            return
+
+                        seconds = 5
+                        p = None
+                        stream = None
+                        try:
+                            p = pyaudio.PyAudio()
+                            stream = p.open(
+                                format=AppConstants.AUDIO_FORMAT,
+                                channels=AppConstants.AUDIO_CHANNELS,
+                                rate=AppConstants.AUDIO_RATE,
+                                input=True,
+                                frames_per_buffer=AppConstants.AUDIO_CHUNK,
+                            )
+                            frames = []
+                            chunks = int(max(1, (AppConstants.AUDIO_RATE * seconds) // AppConstants.AUDIO_CHUNK))
+                            # show recording indicator
+                            try:
+                                rec_top = tk.Toplevel(parent)
+                                rec_top.title('Recording')
+                                rec_top.geometry('240x80')
+                                rec_top.transient(parent)
+                                rec_top.attributes('-topmost', True)
+                                tk.Label(rec_top, text=f'Recording {seconds} seconds...').pack(pady=12)
+                                rec_top.update()
+                            except Exception:
+                                rec_top = None
+
+                            for _ in range(chunks):
+                                data = stream.read(AppConstants.AUDIO_CHUNK, exception_on_overflow=False)
+                                frames.append(data)
+
+                            # Save wav
+                            with _wave.open(str(dest), 'wb') as wf:
+                                wf.setnchannels(AppConstants.AUDIO_CHANNELS)
+                                wf.setsampwidth(p.get_sample_size(AppConstants.AUDIO_FORMAT))
+                                wf.setframerate(AppConstants.AUDIO_RATE)
+                                wf.writeframes(b''.join(frames))
+
+                            # destroy recording indicator and enroll
+                            if rec_top is not None:
+                                try:
+                                    rec_top.destroy()
+                                except Exception:
+                                    pass
+
+                            # Enroll from saved path
+                            do_enroll_from_path(str(dest))
+
+                        except Exception as e:
+                            log(f"Recording/enroll error: {e}", 'error')
+                            try:
+                                self.indicator.root.after(0, lambda: messagebox.showerror("Enroll Speaker", f"Recording failed: {e}"))
+                            except Exception:
+                                pass
+                        finally:
+                            try:
+                                if stream is not None:
+                                    stream.stop_stream()
+                                    stream.close()
+                            except Exception:
+                                pass
+                            try:
+                                if p is not None:
+                                    p.terminate()
+                            except Exception:
+                                pass
+
+                    threading.Thread(target=_record_worker, daemon=True).start()
+
+                btn_record = tk.Button(row, text="Record 5s", width=14, command=on_record)
+                btn_record.pack(side=tk.LEFT, padx=8)
+                btn_select = tk.Button(row, text="Select WAV file", width=14, command=on_select_file)
+                btn_select.pack(side=tk.LEFT, padx=8)
+                tk.Button(dlg, text="Cancel", command=dlg.destroy).pack(pady=(8,10))
+
+            except Exception as e:
+                log(f"Enroll speaker UI error: {e}", 'error')
+                try:
+                    messagebox.showerror("Enroll Speaker", f"An error occurred during enrollment: {e}")
+                except Exception:
+                    pass
+
+        # Always open a simple file dialog (no scheduling) to ensure the menu action works reliably
+        def _open_enroll_dialog_direct():
+            """Open a file dialog and enroll in a background thread to avoid blocking the menu callback."""
+            def _worker():
+                try:
+                    import tkinter as _tk
+                    import tkinter.filedialog as _fd
+                    root = None
+                    wav_path = None
+                    try:
+                        root = _tk.Tk()
+                        root.withdraw()
+                        wav_path = _fd.askopenfilename(parent=root, title="Select WAV sample to enroll", filetypes=[("WAV files", "*.wav")])
+                    finally:
+                        if root is not None:
+                            try:
+                                root.destroy()
+                            except Exception:
+                                pass
+
+                    if not wav_path:
+                        return
+
+                    try:
+                        from instyper import speaker_fingerprint
+                    except Exception:
+                        speaker_fingerprint = None
+
+                    if speaker_fingerprint is None:
+                        try:
+                            messagebox.showwarning("Enroll Speaker", "Speaker enrollment is not available in this installation (missing dependencies).")
+                        except Exception:
+                            pass
+                        return
+
+                    sid = speaker_fingerprint.enroll_speaker(str(wav_path))
+                    if sid:
+                        try:
+                            cfg = ConfigManager.load()
+                            cfg['speaker_lock_enabled'] = True
+                            cfg.setdefault('speaker_lock_threshold', 0.78)
+                            ConfigManager.save(cfg)
+                            try:
+                                self._speaker_lock_enabled = True
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+                        try:
+                            messagebox.showinfo("Enroll Speaker", f"Speaker enrolled successfully with ID: {sid}\nSpeaker-only mode enabled.")
+                        except Exception:
+                            pass
+                        log(f"Speaker enrolled via runtime settings (direct-thread): {sid}; speaker lock enabled", 'info')
+                    else:
+                        try:
+                            messagebox.showwarning("Enroll Speaker", "Enrollment failed. Provide a clean 5-15s WAV (16-bit PCM recommended).")
+                        except Exception:
+                            pass
+                except Exception as e:
+                    log(f"Enroll dialog failed (direct-thread): {e}", 'error')
+
+            threading.Thread(target=_worker, daemon=True).start()
+
+        # open direct dialog in background
+        _open_enroll_dialog_direct()
 
 # =============================================================================
 # GLOBAL HOTKEY HANDLER
