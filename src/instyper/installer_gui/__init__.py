@@ -651,6 +651,11 @@ except Exception as e:
             self.progress_bar = QtWidgets.QProgressBar()
             self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(0)
+            # Make progress bar more visible by increasing height
+            try:
+                self.progress_bar.setFixedHeight(20)
+            except Exception:
+                pass
             self.progress_bar.setVisible(False)
             layout.addWidget(self.progress_bar)
 
@@ -668,7 +673,8 @@ except Exception as e:
             self._log_viewer.setVisible(False)
             # Toggle button to show/hide logs
             self._toggle_logs_btn = QtWidgets.QToolButton()
-            self._toggle_logs_btn.setText('Show logs')
+            # Hidden by default; allow user to reveal a single unified 'details' view
+            self._toggle_logs_btn.setText('See details')
             self._toggle_logs_btn.setCheckable(True)
             def _toggle_logs(checked: bool):
                 self._log_viewer.setVisible(checked)
@@ -721,11 +727,35 @@ except Exception as e:
                     pct = int(m.group(1))
                     text = m.group(2).strip()
                     self.progress_bar.setValue(max(0, min(100, pct)))
-                    self.progress_output.append(f"[{pct}%] {text}")
+                    # Keep the compact progress_output for backward compatibility (hidden by default)
+                    try:
+                        self.progress_output.append(f"[{pct}%] {text}")
+                    except Exception:
+                        pass
+                    # Mirror into the unified collapsible log viewer
+                    try:
+                        if getattr(self, '_log_viewer', None) is not None:
+                            self._log_viewer.moveCursor(QTextCursor.End)
+                            self._log_viewer.insertPlainText(f"[{pct}%] {text}\n")
+                            self._log_viewer.moveCursor(QTextCursor.End)
+                    except Exception:
+                        pass
                     return
                 except Exception:
                     pass
-            self.progress_output.append(message)
+
+            # Generic messages: write to hidden progress output and to unified log viewer
+            try:
+                self.progress_output.append(message)
+            except Exception:
+                pass
+            try:
+                if getattr(self, '_log_viewer', None) is not None:
+                    self._log_viewer.moveCursor(QTextCursor.End)
+                    self._log_viewer.insertPlainText(message + "\n")
+                    self._log_viewer.moveCursor(QTextCursor.End)
+            except Exception:
+                pass
 
             # react to stage messages emitted by worker: format 'stage:<name>:<state>'
             try:
@@ -981,7 +1011,26 @@ except Exception as e:
                 progress_dialog = None
 
             def worker():
-                log_path = self._log_tail_path or (Path.cwd() / LOG_FILENAME)
+                # Prefer the installer log tail path. Avoid using current working directory as a fallback;
+                # use the application data directory (or home) to store installer logs instead.
+                try:
+                    if getattr(self, '_log_tail_path', None):
+                        log_path = self._log_tail_path
+                    else:
+                        if appdirs:
+                            log_path = Path(appdirs.user_data_dir('Instyper', appauthor=False)) / LOG_FILENAME
+                        else:
+                            log_path = Path.home() / LOG_FILENAME
+                except Exception:
+                    log_path = Path.home() / LOG_FILENAME
+
+                # Ensure we have a Path instance (not None) before calling write_log
+                try:
+                    # Coerce via str() to avoid passing None/Path|None to Path()
+                    log_path = Path(str(log_path))
+                except Exception:
+                    log_path = Path.home() / LOG_FILENAME
+
                 try:
                     write_log(log_path, 'INFO', 'installer', 'ensurepip_start', python=python_bin)
                     # ensurepip may be no-op if pip already present
@@ -1106,14 +1155,67 @@ except Exception as e:
 
                 # Log and notify
                 try:
-                    if ok:
-                        self.append_log('Installation finished successfully.')
-                        QtWidgets.QMessageBox.information(self, 'Install complete', f'Installation completed: {result}')
-                    else:
-                        self.append_log(f'Installation failed: {result}')
-                        QtWidgets.QMessageBox.critical(self, 'Install failed', f'Installation failed: {result}')
+                    # Append concise status and show a completion summary dialog with actions
+                    self.append_log('Installation finished successfully.' if ok else f'Installation failed: {result}')
+                    self._show_completion_page(ok, result)
                 except Exception:
                     pass
+            except Exception:
+                pass
+
+        def _show_completion_page(self, ok: bool, result: str) -> None:
+            """Show a simple Installation Complete/Failed dialog with a brief summary and actions."""
+            try:
+                dlg = QtWidgets.QDialog(self)
+                dlg.setWindowTitle('Installation Complete' if ok else 'Installation Failed')
+                dlg.setMinimumWidth(420)
+                v = QtWidgets.QVBoxLayout(dlg)
+
+                status_lbl = QtWidgets.QLabel(f"<b>{'Success' if ok else 'Failure'}</b>")
+                v.addWidget(status_lbl)
+
+                info = QtWidgets.QLabel(f"Installation path: {result}")
+                info.setWordWrap(True)
+                v.addWidget(info)
+
+                # Offer actions: open folder, reveal logs/details, close
+                btn_row = QtWidgets.QHBoxLayout()
+                open_btn = QtWidgets.QPushButton('Open install folder')
+                def _open_folder():
+                    try:
+                        p = Path(result) if ok else Path(self.install_dir_input.text() or Path.home())
+                        if platform.system() == 'Windows':
+                            subprocess.Popen(['explorer', str(p)])
+                        elif platform.system() == 'Darwin':
+                            subprocess.Popen(['open', str(p)])
+                        else:
+                            subprocess.Popen(['xdg-open', str(p)])
+                    except Exception:
+                        pass
+                open_btn.clicked.connect(_open_folder)
+
+                details_btn = QtWidgets.QPushButton('See details')
+                def _show_details():
+                    try:
+                        # Reveal the unified log viewer and ensure the toggle reflects state
+                        if getattr(self, '_toggle_logs_btn', None) is not None:
+                            self._toggle_logs_btn.setChecked(True)
+                        if getattr(self, '_log_viewer', None) is not None:
+                            self._log_viewer.setVisible(True)
+                    except Exception:
+                        pass
+                details_btn.clicked.connect(_show_details)
+
+                close_btn = QtWidgets.QPushButton('Close')
+                close_btn.clicked.connect(dlg.accept)
+
+                btn_row.addStretch(1)
+                btn_row.addWidget(open_btn)
+                btn_row.addWidget(details_btn)
+                btn_row.addWidget(close_btn)
+                v.addLayout(btn_row)
+
+                dlg.exec_()
             except Exception:
                 pass
 
@@ -1331,9 +1433,10 @@ except Exception as e:
                     # numbered badge
                     badge = QtWidgets.QLabel(str(idx))
                     badge.setAlignment(QtCore.Qt.AlignCenter)
-                    badge.setFixedSize(56, 56)
-                    # Glass gradient badge
-                    badge.setStyleSheet('background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(255,255,255,0.9), stop:1 rgba(220,230,255,0.8)); color:#0b1b2b; border-radius:28px; font-weight:bold; font-size:14pt; border: 1px solid rgba(255,255,255,0.6);')
+                    # Slightly smaller badges to fit the wizard better
+                    badge.setFixedSize(40, 40)
+                    # Glass gradient badge (reduced radius and font-size)
+                    badge.setStyleSheet('background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 rgba(255,255,255,0.9), stop:1 rgba(220,230,255,0.8)); color:#0b1b2b; border-radius:20px; font-weight:bold; font-size:11pt; border: 1px solid rgba(255,255,255,0.6);')
                     title_lbl = QtWidgets.QLabel(title)
                     title_lbl.setAlignment(QtCore.Qt.AlignCenter)
                     title_lbl.setToolTip(tip)

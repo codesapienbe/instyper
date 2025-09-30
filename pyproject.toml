@@ -48,6 +48,7 @@ dependencies = [
 instyper = "instyper:main"
 instyper-installer = "instyper.installer_gui:main"
 instyper-installer-cli = "instyper.installer_cli:main"
+instyper-uninstaller = "instyper.installer_gui.uninstaller:main"
 
 [build-system]
 requires = ["hatchling"]
