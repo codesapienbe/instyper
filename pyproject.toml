@@ -1,10 +1,10 @@
 [project]
 name = "instyper"
-version = "0.0.1"
-description = "Add your description here"
+version = "1.0"
+description = "Instyper is a free, open source, cross-platform desktop toolbar application that lets you type with your voice instantly."
 readme = "README.md"
 authors = [
-    { name = "Yilmaz Mustafa", email = "ymus@tuta.io" }
+    { name = "Yilmaz Mustafa", email = "yilmaz@codesapien.net" }
 ]
 requires-python = ">=3.10,<3.11"
 dependencies = [
@@ -22,13 +22,17 @@ dependencies = [
     "pywin32; platform_system == 'Windows'",
     "requests",
     "beautifulsoup4",
-    "pyinstaller",
+    "PyQt5>=5.15.9; platform_system != 'Windows'",
+    "PySide6>=6.5.0; platform_system == 'Windows'",
+    "gitpython>=3.1.31",
+    "appdirs>=1.4.4",
+    "pyshortcuts>=1.1.0",
     # Backend dependencies
-    "speechbrain",              
-    "huggingface_hub",          
-    "stt",                      
+    "speechbrain",
+    "huggingface_hub",
+    "stt",
     "paddlespeech; platform_system != 'Windows'",
-    "numpy<2.0.0",              
+    "numpy<2.0.0",
     "openai-whisper==20240930",
     "cryptography",
     "celery",
@@ -42,7 +46,8 @@ dependencies = [
 
 [project.scripts]
 instyper = "instyper:main"
-test = "test:main"
+instyper-installer = "instyper.installer_gui:main"
+instyper-installer-cli = "instyper.installer_cli:main"
 
 [build-system]
 requires = ["hatchling"]

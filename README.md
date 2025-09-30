@@ -1,127 +1,78 @@
-# 🚀 Instyper: Instant Voice Typer
+# 🚀 Instyper — Instant Voice Typing (end‑user guide)
 
-Instyper is a free, open source, cross-platform desktop toolbar application that lets you type with your voice instantly.
+Instyper is a lightweight, privacy-first desktop application that turns your voice into text instantly. It works offline (Vosk) and supports modern online models (Whisper) and live translation — all with a simple installer and a friendly GUI.
 
-## Key Benefits
+- Fast to install, easy to run
+- Offline-first: use Vosk for on-device recognition
+- Switch to Whisper for higher-quality models (optional)
+- Built-in real-time translation and encrypted speech logs for privacy
 
-- Open source & free forever
-- Cross-platform: Windows, macOS, Linux
-- Simple, no developer setup required
-- Offline support with Vosk
-- Online models like Whisper & SpeechBrain
-- Non-blocking backend switching for seamless performance
-- Real-time multilingual translation: speak in one language and instantly have text typed in another
+----
 
-## Installation
+## Quick start
 
-1. Download the installer for your OS:
-   - Windows: [instyper-win.exe](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-win.exe)
-   - macOS: [instyper-macos](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-macos)
-   - Linux: [instyper-linux](https://github.com/codesapienbe/instyper/releases/download/v0.0.1/instyper-linux)
-2. Run the installer.
-3. Launch Instyper from your system tray or toolbar.
-4. Start speaking to type text instantly!
+1) Install from PyPI (recommended):
 
-## Getting Help
+   - `python -m pip install instyper`
+   - After installation run the platform installer to create a launcher: `instyper install` (or `python -m instyper install`)
 
-- Visit the [Releases](https://github.com/codesapienbe/instyper/releases) page for the latest version and troubleshooting.
-- Open an issue if you need support or have feedback.
+2) Run without installing (try immediately):
 
-## Auto-Translation Mode
+   - `python -m instyper`
 
-Instyper now includes an auto-translation mode: after you speak in your configured input language, your speech is recognized, translated into your configured output language, and typed in real time.
+3) From source (developer/local):
 
-Configure via the system tray Settings menu:
-- **Set Input Language**: the language you speak into the microphone (e.g., 'tr' for Turkish).
-- **Set Output Language**: the language to translate typed text into (e.g., 'en' for English).
+   - Clone the repo and inside the project folder:
+     - `python -m venv .venv && source .venv/bin/activate` (macOS / Linux)
+     - `python -m venv .venv; .\.venv\Scripts\Activate.ps1` (Windows PowerShell)
+     - `python -m pip install --user .`
+     - `python -m instyper install` (to create desktop shortcuts)
 
-With both languages set, simply speak as usual and Instyper will translate and type instantly.
+----
+
+## Highlights
+
+
+1) **Instant typing (offline) with Vosk**
+
+   - Use case: low-latency, private speech→text without internet.
+   - How: In the app Settings choose **Vosk** as the recognition backend, select a small local model (installer downloads recommended small models), then press the microphone button — your speech is typed immediately.
+   - Why: Works completely offline and keeps audio & transcripts on your machine.
+
+2) **Switch to Whisper (higher accuracy)**
+
+   - Use case: improved accuracy, multi-language support and better handling of complex audio.
+   - How: Open Settings → Backend → select **Whisper** and choose a model. Whisper models may be larger; the installer can download them for you. For faster performance, install with GPU support (when available).
+   - Why: Whisper provides higher recognition quality for many languages and noisy environments.
+
+3) **Instant typing + real-time translation**
+
+   - Use case: speak in one language and instantly have the translated text typed in another language.
+   - How: Enable **Auto‑Translation** in Settings, choose your Input and Output languages. Speak normally; the app recognizes, translates, and types in real time.
+   - Why: Great for multilingual workflows, live captions, and cross-language communication.
+
+4) **Encrypted speech logs for privacy and auditability**
+
+   - Use case: keep a secure, auditable record of transcripts while protecting user privacy.
+   - How: Enable **Encrypted logs** in Settings (logs are stored locally and encrypted). You control where logs are saved and when to share them.
+   - Why: Useful for research, debugging, or compliance while minimizing risk to sensitive data.
+
+----
+
+## Why choose Instyper?
+
+- Privacy-first: offline recognition and local encrypted logs.
+- Flexible: switch backends and models from the GUI.
+- Easy: one-line install and a friendly installer to set up shortcuts and models.
+- Modern: real-time translation, solid desktop integration and structured logs for troubleshooting.
+
+----
+
+## Help
+
+- Releases, issues and documentation: `https://github.com/codesapienbe/instyper`
+- If you need support or want to report installation problems, attach `application.log` from your Instyper folder when opening an issue.
 
 ## License
 
-[MIT License](LICENSE)
-
----
-
-## 🛠️ API & Worker Architecture (v1+)
-
-Instyper now uses a secure, scalable **API + Celery Worker** architecture for all business and utility functions.
-
-### Key Features
-- **All business logic is exposed via FastAPI WebSocket endpoints**
-- **Heavy/background work is offloaded to Celery workers** (model download, config, speech log, token management, etc.)
-- **Real-time progress updates** for all long-running tasks
-- **JWT authentication required for all endpoints**
-- **Structured audit logging** (user, IP, correlation ID, etc.)
-- **Rate limiting, input validation, and CORS/origin restrictions**
-- **Consistent, extensible pattern for all new features**
-
-### API Usage Overview
-
-- **All endpoints are WebSocket-based** (for real-time, bidirectional communication)
-- **All requests require a valid JWT** (see below)
-- **All heavy/side-effecting actions return a `task_id`**; subscribe to `/ws/task_progress` for real-time updates
-
-#### Example: Model Download
-1. **Trigger a model download:**
-   - Connect to `/ws/celery_download_model` (WebSocket)
-   - Send: `{ "backend": "whisper", "model_info": {...}, "models_dir": "/path/to/models" }`
-   - Receive: `{ "task_id": "..." }`
-2. **Subscribe to progress:**
-   - Connect to `/ws/task_progress` (WebSocket)
-   - Send: `{ "task_id": "..." }`
-   - Receive progress updates: `{ "task_id": "...", "status": "PROGRESS", "progress": 0 }`, `{ ... progress: 50 }`, `{ ... progress: 100, "result": { ... } }`
-
-#### Example: Utility Function (Human Size)
-1. **Request human-readable size:**
-   - Connect to `/ws/human_size`
-   - Send: `{ "nbytes": 1048576 }`
-   - Receive: `{ "task_id": "..." }`
-2. **Subscribe to progress:**
-   - Connect to `/ws/task_progress`
-   - Send: `{ "task_id": "..." }`
-   - Receive: `{ "task_id": "...", "status": "PROGRESS", "progress": 100, "result": { "human_size": "1.0 MB" } }`
-
-### Endpoint Summary Table
-
-| Endpoint                        | Purpose                                 | Input Example / Notes                |
-|----------------------------------|-----------------------------------------|--------------------------------------|
-| `/ws/celery_download_model`      | Download model (async)                  | `{ backend, model_info, models_dir }`|
-| `/ws/celery_change_config`       | Change config (async)                   | `{ key, value }`                     |
-| `/ws/celery_set_backend`         | Set backend (async)                     | `{ backend_name }`                   |
-| `/ws/celery_set_model`           | Set model (async)                       | `{ model_name }`                     |
-| `/ws/celery_load_config`         | Load config (async)                     | `{}`                                 |
-| `/ws/celery_save_config`         | Save config (async)                     | `{ config_data }`                    |
-| `/ws/celery_reset_config`        | Reset config (async)                    | `{}`                                 |
-| `/ws/celery_load_speech_model`   | Load speech model (async)               | `{ backend, model_name, models_dir }`|
-| `/ws/append_encrypted_speech_log`| Append to encrypted speech log (async)  | `{ text, pincode }`                  |
-| `/ws/decrypt_speech_log`         | Decrypt speech log (async)              | `{ pincode }`                        |
-| `/ws/get_hf_token_from_env`      | Get HuggingFace token (async)           | `{}`                                 |
-| `/ws/save_hf_token_to_env`       | Save HuggingFace token (async)          | `{ token }`                          |
-| `/ws/huggingface_login`          | HuggingFace login (async)               | `{ token }`                          |
-| `/ws/human_size`                 | Human-readable size (async)             | `{ nbytes }`                         |
-| `/ws/show_notification`          | Log notification (async)                | `{ title, message, level }`          |
-| `/ws/is_useless_whisper_output`  | Whisper output filter (async)           | `{ text }`                           |
-| `/ws/find_ckpts`                 | Find .ckpt files in object (async)      | `{ obj }`                            |
-| `/ws/task_progress`              | Subscribe to task progress              | `{ task_id }`                        |
-
-> **All endpoints require JWT authentication and return a `task_id` for progress tracking.**
-
-### Security & Observability
-- **JWT authentication**: All endpoints require a valid JWT in the `Authorization` header.
-- **Rate limiting**: Per-user, per-endpoint rate limits are enforced.
-- **Input validation**: All requests are validated using Pydantic models.
-- **CORS/origin restrictions**: Only allowed origins can connect.
-- **Audit logging**: All actions are logged with user_id, IP, correlation ID, and sanitized inputs.
-
-### Extending the API
-- To add a new business or utility function:
-  1. Implement a Celery task in `instyper_worker` (with progress, logging, and secure args)
-  2. Add a WebSocket endpoint in the API that enqueues the task and returns `task_id`
-  3. Use `/ws/task_progress` for real-time updates
-
----
-
-For more details, see the code in `src/instyper_api/` and `src/instyper_worker/`.
-
----
+MIT License

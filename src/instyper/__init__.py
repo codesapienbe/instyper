@@ -1172,7 +1172,7 @@ class WhisperBackend(SpeechRecognitionBackend):
             import gc
             import torch
         except ImportError:
-            log("Whisper not installed. Please pip install openai-whisper", 'error')
+            log("Whisper not installed. Please run `python -m pip install openai-whisper`", 'error')
             return
 
         try:
@@ -1189,7 +1189,7 @@ class WhisperBackend(SpeechRecognitionBackend):
             log(f"Loaded Whisper model: {model_name}")
         except ModuleNotFoundError as e:
             if 'torch' in str(e):
-                log("PyTorch is required for Whisper. Please pip install torch", 'error')
+                log("PyTorch is required for Whisper. Please run `python -m pip install torch`", 'error')
             else:
                 log(f"Error loading Whisper model: {e}", 'error')
             self.model = None
@@ -1530,7 +1530,7 @@ class PocketsphinxBackend(SpeechRecognitionBackend):
         super().__init__(config, models_dir)
     def is_available(self) -> bool:
         if pocketsphinx is None:
-            log("PocketSphinx not installed. Please pip install pocketsphinx", 'error')
+            log("PocketSphinx not installed. Please run `python -m pip install pocketsphinx`", 'error')
             return False
         return True
     def recognize_speech(self, stop_event: threading.Event, mic_index: Optional[int], indicator: Optional[ListeningIndicator]) -> None:
