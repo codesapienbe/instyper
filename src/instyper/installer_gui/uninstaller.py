@@ -69,11 +69,60 @@ if QtWidgets is not None and QtCore is not None:
                         write_log(self.log_path, 'INFO', 'uninstaller', 'removed_app_dir', path=str(self.install_dir))
                     self.progress.emit('stage:remove_app:ok')
                 except Exception as e:
-                    if write_log is not None and self.log_path is not None:
-                        write_log(self.log_path, 'ERROR', 'uninstaller', 'remove_app_failed', error=str(e))
-                    self.progress.emit('stage:remove_app:fail')
-                    self.finished.emit(False, f'Failed removing application: {e}')
-                    return
+                    # Attempt remediation for permission issues: try to make files writable then retry
+                    try:
+                        import stat as _stat
+                        for p in self.install_dir.rglob('*'):
+                            try:
+                                if p.exists():
+                                    # add owner write bit
+                                    p.chmod(p.stat().st_mode | _stat.S_IWRITE)
+                            except Exception:
+                                # ignore per-file errors
+                                pass
+                        # retry removal after chmod-ing
+                        shutil.rmtree(str(self.install_dir))
+                        if write_log is not None and self.log_path is not None:
+                            write_log(self.log_path, 'INFO', 'uninstaller', 'removed_app_dir_after_chmod', path=str(self.install_dir))
+                        self.progress.emit('stage:remove_app:ok')
+                    except Exception as e2:
+                        # Still failed; attempt to detect blocking processes that have open handles
+                        blockers: list[dict] = []
+                        try:
+                            import psutil  # type: ignore
+                            for proc in psutil.process_iter(['pid', 'name', 'open_files', 'cmdline']):
+                                try:
+                                    pid = getattr(proc, 'pid', None)
+                                    name = getattr(proc, 'name', lambda: '')()
+                                    cmdline = ' '.join(proc.info.get('cmdline') or []) if proc.info.get('cmdline') else ''
+                                    try:
+                                        for of in proc.open_files() or []:
+                                            try:
+                                                if str(self.install_dir) in (of.path or ''):
+                                                    blockers.append({'pid': pid, 'name': name, 'cmd': cmdline})
+                                                    break
+                                            except Exception:
+                                                continue
+                                    except Exception:
+                                        continue
+                                except Exception:
+                                    continue
+                        except Exception:
+                            blockers = []
+
+                        if write_log is not None and self.log_path is not None:
+                            try:
+                                write_log(self.log_path, 'ERROR', 'uninstaller', 'remove_app_failed', error=str(e2), blockers=blockers)
+                            except Exception:
+                                pass
+
+                        self.progress.emit('stage:remove_app:fail')
+                        if blockers:
+                            blk_desc = ','.join(f"{b.get('pid')}:{b.get('name')}" for b in blockers)
+                            self.finished.emit(False, f'Failed removing application: {e2} - blocking processes: {blk_desc}')
+                        else:
+                            self.finished.emit(False, f'Failed removing application: {e2}')
+                        return
 
                 # Stage: remove user data
                 if self.remove_user_data:
@@ -181,6 +230,8 @@ if QtWidgets is not None and QtCore is not None:
 
             self.thread = None
             self.worker = None
+            # track retry attempts to avoid infinite loops
+            self._uninstall_retry_attempts = 0
 
         def append_log(self, message: str) -> None:
             try:
@@ -415,7 +466,7 @@ if QtWidgets is not None and QtCore is not None:
             dlg.exec_()
             return result.get('action') != 'cancel'
 
-        def start_uninstall(self):
+        def start_uninstall(self, skip_confirmation: bool = False):
             install_dir = self.install_dir_input.text().strip()
             if not install_dir:
                 QtWidgets.QMessageBox.warning(self, 'Missing directory', 'Please provide the installation directory to remove.')
@@ -432,10 +483,11 @@ if QtWidgets is not None and QtCore is not None:
                 # detection failure should not block uninstall; continue to confirmation
                 pass
 
-            # Confirm destructive action
-            ok = QtWidgets.QMessageBox.question(self, 'Confirm Uninstall', f'Remove installation at {install_dir}? This cannot be undone.', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-            if ok != QtWidgets.QMessageBox.Yes:
-                return
+            # Confirm destructive action (skip_confirmation is used for automatic retries after killing blockers)
+            if not skip_confirmation:
+                ok = QtWidgets.QMessageBox.question(self, 'Confirm Uninstall', f'Remove installation at {install_dir}? This cannot be undone.', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+                if ok != QtWidgets.QMessageBox.Yes:
+                    return
 
             remove_user = self.remove_user_cb.isChecked()
 
@@ -451,6 +503,28 @@ if QtWidgets is not None and QtCore is not None:
             self.worker.finished.connect(self.on_finished)
             self.thread.started.connect(self.worker.run)
             self.thread.start()
+
+        def _parse_blockers_from_message(self, msg: str) -> list[dict]:
+            # Expect format: '...blocking processes: pid:name,pid2:name2'
+            try:
+                lower = msg.lower()
+                key = 'blocking processes:'
+                if key in lower:
+                    tail = msg[lower.find(key) + len(key):].strip()
+                    # split by comma
+                    parts = [p.strip() for p in tail.split(',') if p.strip()]
+                    out: list[dict] = []
+                    for part in parts:
+                        try:
+                            pid_s, name = part.split(':', 1)
+                            pid = int(pid_s)
+                            out.append({'pid': pid, 'name': name})
+                        except Exception:
+                            continue
+                    return out
+            except Exception:
+                pass
+            return []
 
         def on_finished(self, ok: bool, result: str) -> None:
             try:
@@ -477,6 +551,18 @@ if QtWidgets is not None and QtCore is not None:
                     if ok:
                         QtWidgets.QMessageBox.information(self, 'Uninstall complete', f'Uninstalled: {result}')
                     else:
+                        # If failure mentions blocking processes, offer user to kill and retry
+                        if isinstance(result, str) and 'blocking processes' in result.lower() and self._uninstall_retry_attempts < 2:
+                            blockers = self._parse_blockers_from_message(result)
+                            if blockers:
+                                # Build instances list to reuse the existing dialog
+                                instances = [{'pid': b.get('pid'), 'name': b.get('name'), 'exe': '', 'cmd': ''} for b in blockers]
+                                proceed = self._show_running_processes_dialog(Path(self.install_dir_input.text().strip()), instances)
+                                if proceed:
+                                    # increment retry counter and retry uninstall once
+                                    self._uninstall_retry_attempts += 1
+                                    QtCore.QTimer.singleShot(400, lambda: self.start_uninstall(skip_confirmation=True))
+                                    return
                         QtWidgets.QMessageBox.critical(self, 'Uninstall failed', f'Uninstall failed: {result}')
                 except Exception:
                     pass
