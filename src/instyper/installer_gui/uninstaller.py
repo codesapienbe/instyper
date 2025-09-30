@@ -210,11 +210,228 @@ if QtWidgets is not None and QtCore is not None:
             except Exception:
                 pass
 
+        def _detect_running_instances(self, install_dir: Path) -> list[dict]:
+            """Return a list of running process info dicts that likely belong to Instyper.
+
+            Each dict contains keys: pid, name, exe, cmd.
+            """
+            instances: list[dict] = []
+            # don't include ourselves in the results
+            current_pid = os.getpid()
+            # tokens that likely identify this uninstaller process; exclude them
+            exclude_tokens = ['uninstaller', 'installer_gui', 'instyper.installer_gui.uninstaller']
+            try:
+                import psutil  # type: ignore
+            except Exception:
+                psutil = None  # type: ignore
+
+            try:
+                if psutil is not None:
+                    for p in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
+                        try:
+                            info = p.info
+                            pid = info.get('pid')
+                            # skip current process
+                            if pid is not None and pid == current_pid:
+                                continue
+                            name = (info.get('name') or '')
+                            exe = (info.get('exe') or '')
+                            cmd = ' '.join(info.get('cmdline') or [])
+                            # avoid listing this exact uninstaller module/process
+                            try:
+                                this_file = str(Path(__file__).resolve())
+                            except Exception:
+                                this_file = ''
+                            cmd_l = (cmd or '').lower()
+                            name_l = (name or '').lower()
+                            # skip if command line refers to this file or contains known exclude tokens
+                            if this_file and (this_file in (exe or '') or this_file in (cmd or '')):
+                                continue
+                            if any(t in cmd_l for t in exclude_tokens) or any(t in name_l for t in exclude_tokens):
+                                continue
+                            if (str(install_dir) in (exe or '') or str(install_dir) in (cmd or '')
+                                    or 'instyper' in name_l or 'instyper' in cmd_l):
+                                instances.append({'pid': pid, 'name': name, 'exe': exe, 'cmd': cmd})
+                        except Exception:
+                            # best-effort; skip problematic process
+                            continue
+                else:
+                    # Fallback: use platform tools
+                    if os.name == 'nt':
+                        out = subprocess.check_output(['tasklist', '/fo', 'csv', '/nh'], text=True, errors='ignore')
+                        for line in out.splitlines():
+                            try:
+                                # CSV: "Image Name","PID",...
+                                parts = [p.strip().strip('"') for p in line.split(',')]
+                                if len(parts) < 2:
+                                    continue
+                                name = parts[0]
+                                pid = int(parts[1]) if parts[1].isdigit() else None
+                                # skip current process
+                                if pid is not None and pid == current_pid:
+                                    continue
+                                # exclude known uninstaller identifiers
+                                name_l = (name or '').lower()
+                                if any(t in name_l for t in exclude_tokens):
+                                    continue
+                                if 'instyper' in name_l:
+                                    instances.append({'pid': pid, 'name': name, 'exe': '', 'cmd': ''})
+                            except Exception:
+                                continue
+                    else:
+                        out = subprocess.check_output(['ps', '-eo', 'pid=,args='], text=True, errors='ignore')
+                        for line in out.splitlines():
+                            try:
+                                parts = line.strip().split(None, 1)
+                                if not parts:
+                                    continue
+                                pid = int(parts[0])
+                                # skip current process
+                                if pid == current_pid:
+                                    continue
+                                cmd = parts[1] if len(parts) > 1 else ''
+                                cmd_l = (cmd or '').lower()
+                                # exclude if commandline suggests the uninstaller itself
+                                if any(t in cmd_l for t in exclude_tokens):
+                                    continue
+                                if str(install_dir) in cmd or 'instyper' in cmd_l:
+                                    instances.append({'pid': pid, 'name': cmd.split()[0] if cmd else '', 'exe': '', 'cmd': cmd})
+                            except Exception:
+                                continue
+            except Exception:
+                # If detection fails, return empty list (don't block uninstall)
+                return []
+
+            return instances
+
+        def _show_running_processes_dialog(self, install_dir: Path, instances: list[dict]) -> bool:
+            """Show a dialog listing detected processes and allow the user to kill selected ones.
+
+            Returns True if the user wants to proceed with uninstall, False to cancel.
+            """
+            if not instances:
+                return True
+
+            dlg = QtWidgets.QDialog(self)
+            dlg.setWindowTitle('Running Instyper Processes Detected')
+            dlg.setMinimumWidth(520)
+            v = QtWidgets.QVBoxLayout(dlg)
+
+            intro = QtWidgets.QLabel(f"Found {len(instances)} running process(es) that may belong to Instyper. Select processes to terminate before continuing.")
+            intro.setWordWrap(True)
+            v.addWidget(intro)
+
+            listw = QtWidgets.QListWidget()
+            for inst in instances:
+                pid = inst.get('pid')
+                name = inst.get('name') or ''
+                cmd = inst.get('cmd') or inst.get('exe') or ''
+                display = f"{pid} — {name} — {cmd}"
+                item = QtWidgets.QListWidgetItem(display)
+                item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                item.setCheckState(QtCore.Qt.Unchecked)
+                listw.addItem(item)
+            v.addWidget(listw)
+
+            btn_row = QtWidgets.QHBoxLayout()
+            kill_btn = QtWidgets.QPushButton('Kill Selected')
+            cont_btn = QtWidgets.QPushButton('Continue Anyway')
+            cancel_btn = QtWidgets.QPushButton('Cancel')
+            btn_row.addStretch(1)
+            btn_row.addWidget(kill_btn)
+            btn_row.addWidget(cont_btn)
+            btn_row.addWidget(cancel_btn)
+            v.addLayout(btn_row)
+
+            result: dict[str, str | None] = {'action': None}
+
+            def on_cancel():
+                result['action'] = 'cancel'
+                dlg.reject()
+
+            def on_continue():
+                result['action'] = 'continue'
+                dlg.accept()
+
+            def on_kill():
+                to_kill: list[int] = []
+                for i in range(listw.count()):
+                    it = listw.item(i)
+                    if it.checkState() == QtCore.Qt.Checked:
+                        try:
+                            pid = int(it.text().split('—')[0].strip())
+                            to_kill.append(pid)
+                        except Exception:
+                            continue
+                if not to_kill:
+                    QtWidgets.QMessageBox.information(self, 'No selection', 'No processes selected to kill.')
+                    return
+
+                failed: list[tuple] = []
+                for pid in to_kill:
+                    try:
+                        if os.name == 'nt':
+                            subprocess.check_call(['taskkill', '/PID', str(pid), '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        else:
+                            os.kill(pid, 15)
+                        # log successful kill
+                        try:
+                            ld = Path(install_dir) / LOG_FILENAME if isinstance(install_dir, Path) else Path.home() / LOG_FILENAME
+                            write_log(ld, 'INFO', 'uninstaller', 'killed_process', pid=pid)
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        failed.append((pid, str(e)))
+                        try:
+                            ld = Path(install_dir) / LOG_FILENAME if isinstance(install_dir, Path) else Path.home() / LOG_FILENAME
+                            write_log(ld, 'WARN', 'uninstaller', 'kill_failed', pid=pid, error=str(e))
+                        except Exception:
+                            pass
+
+                if failed:
+                    msgs = '; '.join(f'{p}:{e}' for p, e in failed)
+                    QtWidgets.QMessageBox.warning(self, 'Kill result', f'Failed to kill: {msgs}')
+                else:
+                    QtWidgets.QMessageBox.information(self, 'Kill result', 'Selected processes terminated.')
+
+                # Refresh list by removing killed PIDs
+                for i in range(listw.count() - 1, -1, -1):
+                    it = listw.item(i)
+                    try:
+                        pid = int(it.text().split('—')[0].strip())
+                        if pid in to_kill:
+                            listw.takeItem(i)
+                    except Exception:
+                        continue
+
+                if listw.count() == 0:
+                    result['action'] = 'continue'
+                    dlg.accept()
+
+            kill_btn.clicked.connect(on_kill)
+            cont_btn.clicked.connect(on_continue)
+            cancel_btn.clicked.connect(on_cancel)
+
+            dlg.exec_()
+            return result.get('action') != 'cancel'
+
         def start_uninstall(self):
             install_dir = self.install_dir_input.text().strip()
             if not install_dir:
                 QtWidgets.QMessageBox.warning(self, 'Missing directory', 'Please provide the installation directory to remove.')
                 return
+
+            # Detect running instances and offer to kill them before confirming
+            try:
+                detected = self._detect_running_instances(Path(install_dir))
+                if detected:
+                    proceed = self._show_running_processes_dialog(Path(install_dir), detected)
+                    if not proceed:
+                        return
+            except Exception:
+                # detection failure should not block uninstall; continue to confirmation
+                pass
+
             # Confirm destructive action
             ok = QtWidgets.QMessageBox.question(self, 'Confirm Uninstall', f'Remove installation at {install_dir}? This cannot be undone.', QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             if ok != QtWidgets.QMessageBox.Yes:
