@@ -37,6 +37,7 @@ import sqlite3
 import hashlib
 import socket
 import subprocess
+import argparse
 try:
     from cryptography.fernet import Fernet, InvalidToken
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -93,6 +94,10 @@ _hf_token = None  # Store in memory for session only
 
 # Path to user .env
 USER_ENV_PATH = os.path.expanduser('~/.instyper/.env')
+
+# CLI-configurable behavior for Xvfb auto-start
+ENABLE_XVFB_AUTO = True
+XVFB_GRACE_SECONDS = 30
 
 def prompt_huggingface_token():
     return tkinter.simpledialog.askstring(
@@ -2777,6 +2782,18 @@ def main() -> None:
             ConfigManager.set_speech_log_pincode(pincode)
         else:
             show_notification(AppConstants.APP_NAME, "No PIN code entered; speech log will not be encrypted.", "warning")
+    # Parse CLI flags that affect runtime behavior
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--no-xvfb', action='store_true', help='Do not auto-start Xvfb even if DISPLAY is missing')
+    parser.add_argument('--xvfb-grace', type=int, help='Seconds to wait before stopping Xvfb when a local display appears')
+    cli_args, _ = parser.parse_known_args()
+    if cli_args.no_xvfb:
+        global ENABLE_XVFB_AUTO
+        ENABLE_XVFB_AUTO = False
+    if cli_args.xvfb_grace is not None:
+        global XVFB_GRACE_SECONDS
+        XVFB_GRACE_SECONDS = int(cli_args.xvfb_grace)
+
     # Initialize components
     indicator = ListeningIndicator()
     voice_typer = VoiceTyper(indicator=indicator)
