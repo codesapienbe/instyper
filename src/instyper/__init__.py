@@ -2030,6 +2030,14 @@ class SystemTrayManager:
                     return
             except Exception:
                 pass
+            # If icon still not available, create a Tk fallback window so the
+            # application has a minimal GUI in headless/container environments.
+            try:
+                if self.icon is None:
+                    self._create_tk_fallback()
+            except Exception:
+                pass
+            # Ensure event is set so run() won't block forever
             self._icon_setup_event.set()
 
         threading.Thread(target=retry_worker, daemon=True).start()
@@ -2046,6 +2054,67 @@ class SystemTrayManager:
         if model:
             return f"{AppConstants.APP_NAME} ({backend}: {model})"
         return f"{AppConstants.APP_NAME} ({backend})"
+    
+    def _create_tk_fallback(self) -> None:
+        """Create a small always-on-top Tk window as a fallback when no tray
+        icon can be created (useful for headless/Docker environments)."""
+        try:
+            root = self.indicator.root
+
+            # If a fallback window already exists, do nothing
+            if getattr(self, '_tk_fallback_window', None) is not None:
+                return
+
+            win = tk.Toplevel(root)
+            win.title(f"{AppConstants.APP_NAME} (No Tray)")
+            win.geometry("320x100")
+            win.attributes('-topmost', True)
+
+            status_var = tk.StringVar(win, value=('Listening' if self.voice_typer.is_listening else 'Idle'))
+
+            lbl = tk.Label(win, textvariable=status_var, font=("Arial", 12))
+            lbl.pack(pady=(10, 2))
+
+            def on_toggle():
+                try:
+                    self.voice_typer.toggle_listening()
+                except Exception as e:
+                    log(f"Tk fallback toggle error: {e}", 'error')
+                status_var.set('Listening' if self.voice_typer.is_listening else 'Idle')
+
+            btn_toggle = tk.Button(win, text="Toggle Voice Typing", command=on_toggle)
+            btn_toggle.pack(pady=(2, 4))
+
+            def on_quit():
+                try:
+                    # Reuse existing exit handler to ensure cleanup
+                    self._on_exit(self.icon or self, None)
+                except Exception:
+                    try:
+                        root.quit()
+                    except Exception:
+                        pass
+
+            btn_quit = tk.Button(win, text="Quit", command=on_quit)
+            btn_quit.pack()
+
+            # Provide a minimal icon-like object with stop() so other code can
+            # call it like a pystray icon.
+            class _TkFallbackIcon:
+                def __init__(self, widget):
+                    self._widget = widget
+                def stop(self):
+                    try:
+                        self._widget.destroy()
+                    except Exception:
+                        pass
+
+            self._tk_fallback_window = win
+            self.icon = _TkFallbackIcon(win)
+            self._icon_setup_event.set()
+            log('Created Tk fallback window for tray-less environment', 'info')
+        except Exception as e:
+            log(f'Failed to create Tk fallback window: {e}', 'warning')
     
     def _build_menu(self) -> pystray.Menu:
         """Build the system tray context menu."""
