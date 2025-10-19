@@ -16,11 +16,11 @@ run:
 		echo "Found docker image $(IMAGE_NAME) - running container..."; \
 		XAUTH="$${XAUTHORITY:-}"; \
 		if [ -n "$$XAUTH" ]; then \
-			XAUTH_VOL="-v $$XAUTH:/root/.Xauthority"; \
+			XAUTH_VOL="-v $$XAUTH:/root/.Xauthority:ro -e XAUTHORITY=/root/.Xauthority"; \
 		else \
 			XAUTH_VOL=""; \
 		fi; \
-		docker run --rm -it $$XAUTH_VOL -e DISPLAY=$$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix -v $$PWD:/opt/instyper --device /dev/snd -p 5900:5900 $(IMAGE_NAME); \
+		docker run --rm -it $$XAUTH_VOL -e DISPLAY=$$DISPLAY -e ENABLE_GLOBAL_HOTKEY=0 -e ENABLE_AUTO_PASTE=0 -v $$HOME/.instyper:/root/.instyper -v /tmp/.X11-unix:/tmp/.X11-unix --device /dev/snd $(IMAGE_NAME); \
 	else \
 		echo "Docker image $(IMAGE_NAME) not found - running locally"; \
 		uv run instyper; \

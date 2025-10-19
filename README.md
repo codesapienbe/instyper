@@ -1,78 +1,59 @@
-# 🚀 Instyper — Instant Voice Typing (end‑user guide)
+# Instyper — Docker-first Voice Typing
 
-Instyper is a lightweight, privacy-first desktop application that turns your voice into text instantly. It works offline (Vosk) and supports modern online models (Whisper) and live translation — all with a simple installer and a friendly GUI.
+Instyper runs as a desktop application but is distributed and supported to run only via Docker in this repo. It uses your host X11 server so the native GUI appears on your desktop while the app runs inside a container.
 
-- Fast to install, easy to run
-- Offline-first: use Vosk for on-device recognition
-- Switch to Whisper for higher-quality models (optional)
-- Built-in real-time translation and encrypted speech logs for privacy
+This README focuses on the Docker workflow: build, run, and troubleshoot.
 
-----
+Quick prerequisites on the host:
 
-## Quick start
+- Docker installed
+- A running X server (typical on Linux desktops)
+- If you want audio support, ensure `/dev/snd` exists and your user can access it
 
-1) Install from PyPI (recommended):
+Quick start (3 commands)
 
-   - `python -m pip install instyper`
-   - After installation run the platform installer to create a launcher: `instyper install` (or `python -m instyper install`)
+1. Build the image:
 
-2) Run without installing (try immediately):
+   - `make build`
 
-   - `python -m instyper`
+2. Allow the container to connect to your X server (one-time step):
 
-3) From source (developer/local):
+   - `xhost +local:root`  # allow local root-owned clients to connect
 
-   - Clone the repo and inside the project folder:
-     - `python -m venv .venv && source .venv/bin/activate` (macOS / Linux)
-     - `python -m venv .venv; .\.venv\Scripts\Activate.ps1` (Windows PowerShell)
-     - `python -m pip install --user .`
-     - `python -m instyper install` (to create desktop shortcuts)
+3. Run the app:
 
-----
+   - `make run`
 
-## Highlights
+That's it — the app GUI should appear on your desktop.
 
+Notes and useful options
 
-1) **Instant typing (offline) with Vosk**
+- Persisted data: your models and config are stored on the host at `~/.instyper`. The container mounts this directory so models survive container restarts.
+- Global hotkey and automatic paste are disabled by default in the container (fragile with X/clipboard).
+  - To enable them (advanced / brittle), set environment variables when running the container:
+    - `-e ENABLE_GLOBAL_HOTKEY=1 -e ENABLE_AUTO_PASTE=1`
 
-   - Use case: low-latency, private speech→text without internet.
-   - How: In the app Settings choose **Vosk** as the recognition backend, select a small local model (installer downloads recommended small models), then press the microphone button — your speech is typed immediately.
-   - Why: Works completely offline and keeps audio & transcripts on your machine.
+Troubleshooting
 
-2) **Switch to Whisper (higher accuracy)**
+- No window appears:
+  - Verify `DISPLAY` is set in your shell: `echo $DISPLAY`
+  - Ensure you ran `xhost +local:root` (or mount your Xauthority into the container).
+  - Check `docker run` in `Makefile` mounts `/tmp/.X11-unix` and `~/.instyper`.
 
-   - Use case: improved accuracy, multi-language support and better handling of complex audio.
-   - How: Open Settings → Backend → select **Whisper** and choose a model. Whisper models may be larger; the installer can download them for you. For faster performance, install with GPU support (when available).
-   - Why: Whisper provides higher recognition quality for many languages and noisy environments.
+- Audio issues:
+  - Make sure `/dev/snd` exists and is accessible to Docker. The Makefile mounts it by default.
 
-3) **Instant typing + real-time translation**
+- Permissions or missing models:
+  - Models and config live in `~/.instyper`. If the app complains, check that directory and its permissions.
 
-   - Use case: speak in one language and instantly have the translated text typed in another language.
-   - How: Enable **Auto‑Translation** in Settings, choose your Input and Output languages. Speak normally; the app recognizes, translates, and types in real time.
-   - Why: Great for multilingual workflows, live captions, and cross-language communication.
+Advanced
 
-4) **Encrypted speech logs for privacy and auditability**
+- To run with host clipboard/hotkeys enabled (not recommended), run the container with `-e ENABLE_GLOBAL_HOTKEY=1 -e ENABLE_AUTO_PASTE=1` and ensure XAUTH or `xhost` allows access.
 
-   - Use case: keep a secure, auditable record of transcripts while protecting user privacy.
-   - How: Enable **Encrypted logs** in Settings (logs are stored locally and encrypted). You control where logs are saved and when to share them.
-   - Why: Useful for research, debugging, or compliance while minimizing risk to sensitive data.
+Help
 
-----
+- Issues & source: `https://github.com/codesapienbe/instyper`
 
-## Why choose Instyper?
+License
 
-- Privacy-first: offline recognition and local encrypted logs.
-- Flexible: switch backends and models from the GUI.
-- Easy: one-line install and a friendly installer to set up shortcuts and models.
-- Modern: real-time translation, solid desktop integration and structured logs for troubleshooting.
-
-----
-
-## Help
-
-- Releases, issues and documentation: `https://github.com/codesapienbe/instyper`
-- If you need support or want to report installation problems, attach `application.log` from your Instyper folder when opening an issue.
-
-## License
-
-MIT License
+MIT

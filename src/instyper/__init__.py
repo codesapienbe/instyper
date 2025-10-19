@@ -1040,9 +1040,15 @@ class SpeechRecognitionBackend(abc.ABC):
                 text = self.model.transcribe_file(wav_path)
                 
                 if text:
-                    # Type the text using clipboard/pyautogui
-                    pyperclip.copy(text)
-                    pyautogui.hotkey('ctrl', 'v')
+                    # Type the text using clipboard/pyautogui if enabled via env var
+                    try:
+                        pyperclip.copy(text)
+                        if os.environ.get('ENABLE_AUTO_PASTE', '0') == '1':
+                            pyautogui.hotkey('ctrl', 'v')
+                        else:
+                            log('Auto-paste disabled (ENABLE_AUTO_PASTE != 1); text copied to clipboard only', 'info')
+                    except Exception as e:
+                        log(f'Error during auto-paste handling: {e}', 'warning')
             
             finally:
                 # Clean up temporary file
@@ -1218,8 +1224,14 @@ class VoskBackend(SpeechRecognitionBackend):
             text_to_type = translate_text(text, source_lang, output_language)
         else:
             text_to_type = text
-        pyperclip.copy(text_to_type + " ")
-        pyautogui.hotkey('ctrl', 'v')
+        try:
+            pyperclip.copy(text_to_type + " ")
+            if os.environ.get('ENABLE_AUTO_PASTE', '0') == '1':
+                pyautogui.hotkey('ctrl', 'v')
+            else:
+                log('Auto-paste disabled (ENABLE_AUTO_PASTE != 1); text copied to clipboard only', 'info')
+        except Exception as e:
+            log(f'Error during auto-paste handling: {e}', 'warning')
         if indicator:
             indicator.label.config(text='Listening...')
 
@@ -1400,8 +1412,14 @@ class WhisperBackend(SpeechRecognitionBackend):
             text_to_type = translate_text(text, source_lang, output_language)
         else:
             text_to_type = text
-        pyperclip.copy(text_to_type + " ")
-        pyautogui.hotkey('ctrl', 'v')
+        try:
+            pyperclip.copy(text_to_type + " ")
+            if os.environ.get('ENABLE_AUTO_PASTE', '0') == '1':
+                pyautogui.hotkey('ctrl', 'v')
+            else:
+                log('Auto-paste disabled (ENABLE_AUTO_PASTE != 1); text copied to clipboard only', 'info')
+        except Exception as e:
+            log(f'Error during auto-paste handling: {e}', 'warning')
         if indicator:
             indicator.label.config(text='Listening...')
 
@@ -2871,8 +2889,14 @@ def main() -> None:
     # Setup cleanup
     atexit.register(voice_typer.cleanup)
     
-    # Setup global hotkey
-    setup_global_hotkey(voice_typer)
+    # Setup global hotkey (opt-in via env var to avoid fragile host interactions in Docker)
+    try:
+        if os.environ.get('ENABLE_GLOBAL_HOTKEY', '0') == '1':
+            setup_global_hotkey(voice_typer)
+        else:
+            log('Global hotkey disabled (ENABLE_GLOBAL_HOTKEY != 1)', 'info')
+    except Exception as e:
+        log(f'Error configuring global hotkey: {e}', 'warning')
     
     # Show tutorial for first-time users
     if not os.path.isfile(AppConstants.FIRST_RUN_FLAG):
