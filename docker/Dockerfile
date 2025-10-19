@@ -3,10 +3,12 @@ FROM python:3.10-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    xvfb x11vnc fluxbox x11-utils python3-tk pulseaudio pulseaudio-utils \
-    libgtk-3-0 dbus ca-certificates \
-    curl wget git procps \
- && rm -rf /var/lib/apt/lists/*
+   build-essential gcc git pkg-config libsndfile1-dev libasound2-dev portaudio19-dev \
+   libpulse-dev libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev \
+   xvfb x11vnc fluxbox x11-utils python3-tk pulseaudio pulseaudio-utils \
+   libgtk-3-0 dbus ca-certificates \
+   curl wget git procps \
+&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/instyper
 COPY . /opt/instyper
