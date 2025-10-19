@@ -36,6 +36,7 @@ from typing import Optional, Dict, List, Callable, Any, Tuple
 import sqlite3
 import hashlib
 import socket
+import subprocess
 try:
     from cryptography.fernet import Fernet, InvalidToken
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -543,6 +544,8 @@ class VoskModelDownloader(ModelDownloader):
                 if not url or not name:
                     self._notify_progress('Invalid model info.')
                     return
+                # Ensure the destination models directory exists before downloading
+                os.makedirs(self.models_dir, exist_ok=True)
                 dest_zip = os.path.join(self.models_dir, f"{model_dir}.zip")
                 self._notify_progress(f'Downloading {name}...')
                 urllib.request.urlretrieve(url, dest_zip)
@@ -1943,14 +1946,88 @@ class SystemTrayManager:
         self.voice_typer = voice_typer
         self.indicator = indicator
         self.icon = None
+        self._icon_setup_event = threading.Event()
+        self._icon_setup_attempts = 0
+        self._xvfb_process = None
+        self._xvfb_started_by_manager = False
+        self._previous_display = None
+        atexit.register(self._stop_xvfb)
         self._setup_icon()
     
     def _setup_icon(self) -> None:
         """Setup the system tray icon."""
-        self.icon = pystray.Icon(AppConstants.APP_ID)
-        self.icon.icon = create_icon()
-        self.icon.title = self._get_icon_title()
-        self.icon.menu = self._build_menu()
+        # Try immediate creation first. If it fails, start a background retry
+        # worker that will attempt to initialize the icon multiple times. This
+        # helps when the desktop environment hasn't finished initializing its
+        # systray manager yet (common on certain Linux session startups).
+        def try_create():
+            # Attempt to create the pystray icon; return True on success.
+            try:
+                # If no X display and not Windows, still attempt: some systems
+                # have alternate backends (Wayland/XWayland) that may still work.
+                icon = pystray.Icon(AppConstants.APP_ID)
+                icon.icon = create_icon()
+                icon.title = self._get_icon_title()
+                icon.menu = self._build_menu()
+                # If successful, attach to self and signal event
+                self.icon = icon
+                self._icon_setup_event.set()
+                log('System tray icon created successfully', 'info')
+                return True
+            except Exception as e:
+                log(f'Attempt to create system tray icon failed: {e}', 'warning')
+                return False
+
+        # If no DISPLAY is present, attempt to start Xvfb so tray backends
+        # that require an X server can initialize (useful on headless/VMs).
+        if platform.system() != 'Windows' and 'DISPLAY' not in os.environ:
+            try:
+                if self._start_xvfb_if_needed():
+                    # After starting Xvfb, allow a moment for it to settle
+                    time.sleep(0.5)
+            except Exception as e:
+                log(f'Failed to start Xvfb: {e}', 'warning')
+
+        # Try AppIndicator first on Linux (often more reliable), then pystray
+        try:
+            if self._try_create_appindicator():
+                return
+        except Exception:
+            pass
+
+        # Immediate pystray attempt
+        if try_create():
+            return
+
+        # Start a retry thread that will try several times to create the icon.
+        def retry_worker():
+            max_attempts = 10
+            delay_seconds = 2
+            for attempt in range(max_attempts):
+                self._icon_setup_attempts = attempt + 1
+                if try_create():
+                    return
+                # If pystray failed, try AppIndicator (common on many Linux DEs)
+                try:
+                    if self._try_create_appindicator():
+                        return
+                except Exception:
+                    pass
+                time.sleep(delay_seconds)
+            # If we reach here, icon couldn't be created; set event so callers
+            # waiting on run() won't block forever. No GUI fallback is created
+            # here because we attempt to ensure an X server (Xvfb) is started
+            # earlier for headless sessions.
+            log('Exceeded attempts creating system tray icon; aborting retries', 'warning')
+            # Final attempt to create AppIndicator before giving up
+            try:
+                if self._try_create_appindicator():
+                    return
+            except Exception:
+                pass
+            self._icon_setup_event.set()
+
+        threading.Thread(target=retry_worker, daemon=True).start()
     
     def _get_icon_title(self) -> str:
         """Get the icon title showing current backend and model."""
@@ -2072,8 +2149,14 @@ class SystemTrayManager:
     def _on_toggle(self, icon, item) -> None:
         """Handle toggle voice typing."""
         self.voice_typer.toggle_listening()
-        self.icon.icon = create_icon(self.voice_typer.is_listening)
-        self.icon.title = self._get_icon_title()
+        # Update tray icon/title if available
+        if self.icon is not None:
+            try:
+                self.icon.icon = create_icon(self.voice_typer.is_listening)
+                self.icon.title = self._get_icon_title()
+            except Exception:
+                # Best-effort; ignore failures to update the icon
+                pass
         
         if self.voice_typer.is_listening:
             self.indicator.root.after(0, self.indicator.show)
@@ -2128,7 +2211,189 @@ class SystemTrayManager:
     
     def run(self) -> None:
         """Run the system tray icon."""
-        self.icon.run()
+        # Wait briefly for the icon to be set up by the background worker if
+        # the initial creation is still in progress.
+        if self.icon is None and not self._icon_setup_event.is_set():
+            # Wait up to 6 seconds for setup
+            self._icon_setup_event.wait(timeout=6)
+
+        if self.icon is None:
+            log('System tray icon not available after retries; skipping run()', 'error')
+            return
+
+        try:
+            # If using pystray.Icon, call its run(). For AppIndicator (gi) or
+            # fallback Tk window, the respective mainloops were started when
+            # creating them, so there's nothing to block on here.
+            if hasattr(self.icon, 'run') and callable(getattr(self.icon, 'run')):
+                # Run the pystray icon mainloop; this call blocks until icon.stop()
+                self.icon.run()
+            else:
+                # Nothing to do: AppIndicator/GTK mainloop or Tk fallback is
+                # already running in background threads.
+                log('Tray icon created (non-pystray); run() returning', 'info')
+        except Exception as e:
+            log(f'Error running system tray icon: {e}', 'error')
+
+    # Note: Tk fallback removed; rely on Xvfb/AppIndicator/pystray for tray icon
+
+    def _try_create_appindicator(self) -> bool:
+        """Attempt to create an AppIndicator (libappindicator) tray icon as a
+        fallback for desktop environments that support it (Ubuntu, GNOME,
+        etc.). Returns True on success."""
+        try:
+            # Import gi and AppIndicator on demand
+            import gi
+            gi.require_version('Gtk', '3.0')
+            gi.require_version('AppIndicator3', '0.1')
+            from gi.repository import Gtk, AppIndicator3, GLib
+            import tempfile
+
+            # Write icon to a temporary PNG file
+            pil_img = create_icon(self.voice_typer.is_listening).resize((64, 64))
+            fd, tmp_path = tempfile.mkstemp(suffix='.png')
+            os.close(fd)
+            try:
+                pil_img.save(tmp_path, format='PNG')
+            except Exception:
+                # If PIL save fails, ensure file is removed
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                raise
+
+            # Create the indicator
+            indicator_id = f"{AppConstants.APP_ID}-indicator"
+            indicator = AppIndicator3.Indicator.new(indicator_id, tmp_path, AppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+            indicator.set_status(AppIndicator3.IndicatorStatus.ACTIVE)
+
+            # Build a simple menu
+            menu = Gtk.Menu()
+
+            def make_item(label, callback):
+                item = Gtk.MenuItem(label=label)
+                item.connect('activate', lambda w: callback())
+                item.show()
+                menu.append(item)
+
+            make_item('Toggle Voice Typing', self.voice_typer.toggle_listening)
+            make_item('Quit', lambda: (indicator.set_status(AppIndicator3.IndicatorStatus.PASSIVE), Gtk.main_quit()))
+
+            indicator.set_menu(menu)
+
+            # Run GTK mainloop in a background thread so it doesn't block
+            def gtk_thread():
+                try:
+                    Gtk.main()
+                except Exception as e:
+                    log(f'AppIndicator GTK main loop failed: {e}', 'error')
+
+            t = threading.Thread(target=gtk_thread, daemon=True)
+            t.start()
+
+            # Keep a reference so we can stop it later
+            self.icon = indicator
+            self._icon_setup_event.set()
+            log('AppIndicator created successfully', 'info')
+            return True
+        except Exception as e:
+            log(f'AppIndicator creation failed: {e}', 'warning')
+            return False
+
+    def _start_xvfb_if_needed(self) -> bool:
+        """Start Xvfb in a background process when DISPLAY is missing. Returns
+        True if Xvfb was started and DISPLAY env var is set.
+        """
+        # If DISPLAY is already set, nothing to do
+        if 'DISPLAY' in os.environ and os.environ['DISPLAY']:
+            return False
+        # Avoid starting multiple Xvfb instances
+        if self._xvfb_process is not None:
+            return True
+        # Try common Xvfb binary names
+        xvfb_candidates = ['Xvfb', 'xvfb-run']
+        for bin_name in xvfb_candidates:
+            try:
+                # Use --help to check presence without launching full run wrapper
+                subprocess.run([bin_name, '--help'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                continue
+            try:
+                # Launch a headless X server on display :99
+                display_num = ':99'
+                if bin_name == 'xvfb-run':
+                    # xvfb-run is a wrapper that runs a command; run a dummy sleep to hold it
+                    cmd = [bin_name, '--server-num=99', '--server-args=-screen 0 1024x768x24', 'sleep', '99999']
+                    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    cmd = [bin_name, display_num, '-screen', '0', '1024x768x24']
+                    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # Save previous DISPLAY (if any) and set DISPLAY for children
+                self._previous_display = os.environ.get('DISPLAY')
+                os.environ['DISPLAY'] = display_num
+                self._xvfb_process = proc
+                self._xvfb_started_by_manager = True
+                log(f'Started Xvfb process ({bin_name}) on {display_num}', 'info')
+                # Start monitor thread to stop Xvfb when a real display appears
+                try:
+                    self._start_display_monitor()
+                except Exception:
+                    pass
+                return True
+            except Exception as e:
+                log(f'Failed to launch {bin_name}: {e}', 'warning')
+                continue
+        return False
+
+    def _stop_xvfb(self) -> None:
+        try:
+            if getattr(self, '_xvfb_process', None) is not None:
+                try:
+                    self._xvfb_process.terminate()
+                except Exception:
+                    pass
+                self._xvfb_process = None
+                # Only clear DISPLAY if we started Xvfb and there was no prior DISPLAY
+                try:
+                    if getattr(self, '_xvfb_started_by_manager', False):
+                        if self._previous_display:
+                            os.environ['DISPLAY'] = self._previous_display
+                        else:
+                            os.environ.pop('DISPLAY', None)
+                except Exception:
+                    pass
+                self._xvfb_started_by_manager = False
+        except Exception as e:
+            log(f'Error stopping Xvfb process: {e}', 'warning')
+
+    def _start_display_monitor(self, grace_seconds: int = 30) -> None:
+        """Start a background thread that watches for a local display (X or Wayland).
+        When a local display appears, wait `grace_seconds` and then stop Xvfb if
+        it was started by this manager.
+        """
+        def monitor():
+            try:
+                poll_interval = 2
+                uid = os.getuid()
+                wayland_socket = f"/run/user/{uid}/wayland-0"
+                x_socket = "/tmp/.X11-unix/X0"
+                while True:
+                    # If X socket exists or Wayland socket exists, consider local display present
+                    if os.path.exists(x_socket) or os.path.exists(wayland_socket):
+                        log('Local display detected; will stop Xvfb after grace period', 'info')
+                        # Wait grace period to allow client apps to reconnect
+                        time.sleep(grace_seconds)
+                        # Only stop if we started Xvfb
+                        if getattr(self, '_xvfb_started_by_manager', False):
+                            log('Stopping Xvfb started by manager due to local display presence', 'info')
+                            self._stop_xvfb()
+                        return
+                    time.sleep(poll_interval)
+            except Exception as e:
+                log(f'Display monitor error: {e}', 'warning')
+
+        threading.Thread(target=monitor, daemon=True).start()
 
     def _set_speech_log_pincode_gui(self, icon, item):
         # Tkinter dialog for pincode entry/confirmation
