@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Lightweight entrypoint for running the GUI using the host X server.
-# Assumes the host has mounted /tmp/.X11-unix and optionally Xauthority.
-
-# Ensure config dir exists in container
-mkdir -p /root/.instyper
+if mkdir -p /root/.instyper 2>/dev/null; then
+    :
+else
+    mkdir -p "${HOME:-/tmp}/.instyper" 2>/dev/null || true
+fi
 
 # If XAUTHORITY was bind-mounted, ensure env points to it
 if [ -n "${XAUTHORITY:-}" ]; then
