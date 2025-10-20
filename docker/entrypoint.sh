@@ -2,20 +2,26 @@
 set -euo pipefail
 
 ## Ensure a writable per-user config directory exists. Prefer $HOME if set, else fall back to /tmp.
-if mkdir -p "${HOME:-/tmp}/.instyper" 2>/dev/null; then
+HOME_DIR="${HOME:-/tmp}"
+if mkdir -p "${HOME_DIR}/.instyper" 2>/dev/null; then
     :
 else
     mkdir -p "/tmp/.instyper" 2>/dev/null || true
 fi
 
-# If XAUTHORITY was bind-mounted, ensure env points to it
+# If XAUTHORITY was bind-mounted, ensure env points to it and the file exists
 ## If XAUTHORITY was bind-mounted from the host, point the variable inside the container to that path
-if [ -n "${XAUTHORITY:-}" ]; then
-    export XAUTHORITY=${XAUTHORITY}
+if [ -n "${XAUTHORITY:-}" ] && [ -f "${XAUTHORITY}" ]; then
+    export XAUTHORITY="${XAUTHORITY}"
+else
+    # Unset if not present to avoid pointing to a non-existent file
+    unset XAUTHORITY 2>/dev/null || true
 fi
 
 # Start pulseaudio if available (non-fatal)
-pulseaudio --start || true
+if command -v pulseaudio >/dev/null 2>&1; then
+    pulseaudio --start || true
+fi
 
 # Run the application via uv to match local development workflow.
 # Prefer absolute path if available; fall back to python module if uv is missing or fails.
