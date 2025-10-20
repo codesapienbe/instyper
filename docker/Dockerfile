@@ -11,21 +11,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 || true && rm -rf /var/lib/apt/lists/*
 
 # If python3 or pip are missing (e.g. when BASE_IMAGE is a plain debian), install them
-RUN if ! command -v python3 >/dev/null 2>&1 || ! python3 -m pip --version >/dev/null 2>&1; then \
-    apt-get update && apt-get install -y --no-install-recommends python3 python3-distutils python3-venv python3-pip && \
-    ln -sf /usr/bin/python3 /usr/local/bin/python3 || true && \
-    python3 -m pip install --upgrade pip setuptools wheel || true; \
+RUN if ! command -v python3.10 >/dev/null 2>&1; then \
+    apt-get update && apt-get install -y --no-install-recommends python3.10 python3.10-venv python3.10-pip python3.10-distutils && \
+    ln -sf /usr/bin/python3.10 /usr/local/bin/python3 || true && \
+    python3.10 -m pip install --upgrade pip setuptools wheel || true; \
     fi
 
 WORKDIR /opt/instyper
 COPY . /opt/instyper
 
-ENV UV_PYTHON=/usr/bin/python3
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+RUN mkdir -p /opt/uv-python && chmod -R 755 /opt/uv-python
 RUN uv sync || true
 
-# Ensure the virtualenv created by uv is usable by a non-root process when the container
-# is started with a host UID via "--user $(id -u):$(id -g)". Make venv files world-readable
-# and directories world-executable so the interpreter can be resolved by numeric UIDs.
+# Ensure the virtualenv created by uv and the Python installation are usable by a non-root process
+# when the container is started with a host UID via "--user $(id -u):$(id -g)".
+RUN chmod -R 755 /opt/uv-python || true
 RUN if [ -d /opt/instyper/.venv ]; then \
     chmod -R 755 /opt/instyper/.venv || true; \
     find /opt/instyper/.venv -type f -exec chmod 644 {} \; || true; \
