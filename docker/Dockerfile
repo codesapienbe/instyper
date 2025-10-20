@@ -1,45 +1,115 @@
-FROM ghcr.io/astral-sh/uv:debian
+# Instyper Docker Image
+# Voice typing application with GUI and speech recognition capabilities
+# Multi-stage build: builder stage for compilation, runtime stage for execution
+
+# =============================================================================
+# Builder Stage: Install dependencies and build virtual environment
+# =============================================================================
+FROM ghcr.io/astral-sh/uv:debian AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Ensure a minimal build toolchain and python/pip are available when falling back to a plain debian image
+# Install build-time system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-   build-essential gcc git pkg-config libsndfile1-dev libasound2-dev portaudio19-dev \
-   libpulse-dev libavcodec-dev libavformat-dev libavdevice-dev libavutil-dev \
-   xvfb x11vnc fluxbox x11-utils python3-tk pulseaudio pulseaudio-utils \
-   libgtk-3-0 dbus ca-certificates \
-   curl wget git procps apt-transport-https ca-certificates gnupg2 \
-|| true && rm -rf /var/lib/apt/lists/*
+    # Build tools and compilers (needed for Python packages with native extensions)
+    build-essential \
+    gcc \
+    pkg-config \
+    # Version control (needed for some Python packages)
+    git \
+    # Audio libraries and development headers
+    libsndfile1-dev \
+    libasound2-dev \
+    portaudio19-dev \
+    libpulse-dev \
+    # Multimedia libraries for audio/video processing
+    libavcodec-dev \
+    libavformat-dev \
+    libavdevice-dev \
+    libavutil-dev \
+    # Network and certificates (needed for downloading packages)
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-# If python3 or pip are missing (e.g. when BASE_IMAGE is a plain debian), install them
-RUN if ! command -v python3.10 >/dev/null 2>&1; then \
-    apt-get update && apt-get install -y --no-install-recommends python3.10 python3.10-venv python3.10-pip python3.10-distutils && \
-    ln -sf /usr/bin/python3.10 /usr/local/bin/python3 || true && \
-    python3.10 -m pip install --upgrade pip setuptools wheel || true; \
-    fi
-
+# Set working directory
 WORKDIR /opt/instyper
+
+# Copy dependency files first for better layer caching
+COPY pyproject.toml uv.lock ./
+
+# Configure uv Python installation directory
+ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
+
+# Install Python dependencies using uv (creates .venv directory)
+RUN uv sync --frozen --no-install-project
+
+# Copy source code
 COPY . /opt/instyper
 
-ENV UV_PYTHON_INSTALL_DIR=/opt/uv-python
-RUN mkdir -p /opt/uv-python && chmod -R 755 /opt/uv-python
-RUN uv sync || true
+# =============================================================================
+# Runtime Stage: Minimal image with only runtime dependencies
+# =============================================================================
+FROM ghcr.io/astral-sh/uv:debian AS runtime
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Ensure the virtualenv created by uv and the Python installation are usable by a non-root process
-# when the container is started with a host UID via "--user $(id -u):$(id -g)".
-RUN chmod -R 755 /opt/uv-python || true
-RUN if [ -d /opt/instyper/.venv ]; then \
-    chmod -R 755 /opt/instyper/.venv || true; \
-    find /opt/instyper/.venv -type f -exec chmod 644 {} \; || true; \
-    if [ -d /opt/instyper/.venv/bin ]; then \
-        chmod 755 /opt/instyper/.venv/bin/* || true; \
-    fi; \
-    fi
+# Install runtime system dependencies (no build tools needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # GUI and display server dependencies
+    xvfb \
+    x11vnc \
+    fluxbox \
+    x11-utils \
+    python3-tk \
+    libgtk-3-0 \
+    dbus \
+    # Audio libraries (runtime only)
+    libsndfile1 \
+    libasound2 \
+    portaudio19 \
+    libpulse0 \
+    # Multimedia libraries (runtime only)
+    libavcodec58 \
+    libavformat58 \
+    libavdevice58 \
+    libavutil56 \
+    # Audio server
+    pulseaudio \
+    pulseaudio-utils \
+    # Network tools
+    curl \
+    wget \
+    ca-certificates \
+    # Process monitoring
+    procps \
+    && rm -rf /var/lib/apt/lists/*
 
+# Set working directory
+WORKDIR /opt/instyper
+
+# Copy Python virtual environment from builder stage
+COPY --from=builder /opt/instyper/.venv /opt/instyper/.venv
+
+# Copy uv Python installation from builder stage
+COPY --from=builder /opt/uv-python /opt/uv-python
+
+# Copy source code (needed for the application to run)
+COPY --from=builder /opt/instyper/src /opt/instyper/src
+COPY --from=builder /opt/instyper/pyproject.toml /opt/instyper/
+
+# Ensure proper permissions for non-root execution
+# This allows the container to run with host user ID via --user flag
+RUN chmod -R 755 /opt/uv-python && \
+    chmod -R 755 /opt/instyper/.venv && \
+    find /opt/instyper/.venv -type f -exec chmod 644 {} \; && \
+    chmod 755 /opt/instyper/.venv/bin/*
+
+# Copy and configure entrypoint script
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Expose VNC port for GUI access
 EXPOSE 5900
 
+# Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 
