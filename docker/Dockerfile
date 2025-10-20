@@ -93,21 +93,12 @@ COPY --from=builder /opt/uv-python /opt/uv-python
 COPY --from=builder /opt/instyper/src /opt/instyper/src
 COPY --from=builder /opt/instyper/pyproject.toml /opt/instyper/
 
-# Ensure proper permissions for non-root execution
-# This allows the container to run with host user ID via --user flag
-RUN chmod -R 755 /opt/uv-python && \
-    chmod -R 755 /opt/instyper/.venv && \
-    find /opt/instyper/.venv -type f -exec chmod 644 {} \; && \
-    chmod 755 /opt/instyper/.venv/bin/*
-
-# Copy and configure entrypoint script
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Make virtual environment writable for non-root users
+RUN chmod -R 777 /opt/instyper/.venv
 
 # Expose VNC port for GUI access
 EXPOSE 5900
 
-# Set entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
+# Default command to run the application
+CMD pulseaudio --start || true && uv run instyper
 
