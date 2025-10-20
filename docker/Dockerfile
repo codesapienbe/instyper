@@ -64,13 +64,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Audio libraries (runtime only)
     libsndfile1 \
     libasound2 \
-    portaudio19 \
+    libportaudio2 \
+    libportaudiocpp0 \
     libpulse0 \
-    # Multimedia libraries (runtime only)
-    libavcodec58 \
-    libavformat58 \
-    libavdevice58 \
-    libavutil56 \
+    # Multimedia libraries (install ffmpeg for all runtime codecs)
+    ffmpeg \
     # Audio server
     pulseaudio \
     pulseaudio-utils \
