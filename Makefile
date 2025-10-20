@@ -47,9 +47,9 @@ run:
 	fi; \
 
 	docker run --rm $${XAUTH_ARGS} -e DISPLAY=$$DISPLAY -e HOME=/tmp -v /tmp/.X11-unix:/tmp/.X11-unix $${PULSE_ARGS} $${DBUS_ARGS} \
-			--device /dev/snd --device /dev/dri --shm-size=1g --user $$(id -u):$$(id -g) --network host \
+			--device /dev/snd --device /dev/dri --shm-size=1g --network host \
 			-e ENABLE_GLOBAL_HOTKEY=0 -e ENABLE_AUTO_PASTE=0 \
-			-v $$HOME/.instyper:/tmp/.instyper \
+			-v $$HOME/.instyper:/root/.instyper \
 			$(IMAGE_NAME);
 
 

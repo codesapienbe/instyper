@@ -92,13 +92,11 @@ COPY --from=builder /opt/uv-python /opt/uv-python
 # Copy source code (needed for the application to run)
 COPY --from=builder /opt/instyper/src /opt/instyper/src
 COPY --from=builder /opt/instyper/pyproject.toml /opt/instyper/
-
-# Make virtual environment writable for non-root users
-RUN chmod -R 777 /opt/instyper/.venv
+COPY --from=builder /opt/instyper/README.md /opt/instyper/
 
 # Expose VNC port for GUI access
 EXPOSE 5900
 
-# Default command to run the application
-CMD pulseaudio --start || true && uv run instyper
+# Default command to run the application (use JSON form to preserve signal handling)
+CMD ["bash","-c","pulseaudio --start || true && uv run instyper"]
 
