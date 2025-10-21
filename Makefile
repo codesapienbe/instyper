@@ -5,12 +5,12 @@ DOCKERFILE := docker/Dockerfile
 
 build:
 	@echo "Preparing project and building docker image..."
-	@uv sync || true
-
+	@echo "Note: Python virtualenv (.venv) is created inside the Docker builder stage; skipping local uv sync"
 	@echo "Building docker image $(IMAGE_NAME) as final step..."
 	@docker build -t $(IMAGE_NAME) -f $(DOCKERFILE) .
 
-run:
+
+run: build
 	@echo "Running Instyper on Docker..."
 	# Minimal docker run: only mount per-user config by default; host integrations are optional
 	@echo "To run: docker run -v $$HOME/.instyper:/root/.instyper $(IMAGE_NAME)";

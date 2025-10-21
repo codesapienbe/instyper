@@ -10,6 +10,10 @@ Quick prerequisites on the host:
 - A running X server (typical on Linux desktops)
 - If you want audio support, ensure `/dev/snd` exists and your user can access it
 
+- **Local build requirement (optional)**: If you plan to build or run the Python environment outside Docker, install the PortAudio development headers (so packages like `pyaudio` can compile):
+  - Debian/Ubuntu: `sudo apt-get install -y portaudio19-dev build-essential gcc pkg-config`
+  - macOS (Homebrew): `brew install portaudio`
+
 Quick start (3 commands)
 
 1. Build the image:

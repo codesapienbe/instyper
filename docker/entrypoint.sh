@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -euo pipefail
 
 ## Ensure a writable per-user config directory exists. Prefer $HOME if set, else fall back to /tmp.
@@ -23,14 +23,12 @@ if command -v pulseaudio >/dev/null 2>&1; then
     pulseaudio --start || true
 fi
 
-# Run the application via uv to match local development workflow.
-# Prefer absolute path if available; fall back to python module if uv is missing or fails.
-UV_BIN="/usr/local/bin/uv"
-if [ -x "$UV_BIN" ]; then
-    exec "$UV_BIN" run instyper
-fi
+## Run `uv sync` at container start to ensure the virtualenv is created in-container
 if command -v uv >/dev/null 2>&1; then
+    # Sync dependencies (non-fatal if it fails) and then run the app
+    uv sync --no-install-project || true
     exec uv run instyper
 fi
+
 # Fallback: run directly with python if uv isn't available
 exec python3 -m instyper
