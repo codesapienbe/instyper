@@ -1,21 +1,17 @@
-IMAGE_NAME := instyper:latest
-DOCKERFILE := docker/Dockerfile
+UV := uv
 
-.PHONY: build run clean deploy
+.PHONY: build run clean deploy release
 
+# Create or sync the local virtualenv using uv
 build:
-	@echo "Preparing project and building docker image..."
-	@echo "Note: Python virtualenv (.venv) is created inside the Docker builder stage; skipping local uv sync"
-	@echo "Building docker image $(IMAGE_NAME) as final step..."
-	@docker build -t $(IMAGE_NAME) -f $(DOCKERFILE) .
+	@echo "Preparing project and ensuring virtualenv with uv..."
+	@$(UV) sync --no-install-project || true
 
 
+# Run the application via uv. Assumes user has a working X server and optional audio devices on host.
 run: build
-	@echo "Running Instyper on Docker..."
-	# Minimal docker run: only mount per-user config by default; host integrations are optional
-	@echo "To run: docker run -v $$HOME/.instyper:/root/.instyper $(IMAGE_NAME)";
-	# Run container with only required per-user config mount; users can add more flags if needed
-	docker run --rm -e HOME=/tmp -v $$HOME/.instyper:/root/.instyper $(IMAGE_NAME)
+	@echo "Running Instyper via uv..."
+	@$(UV) run instyper
 
 
 clean:
@@ -25,7 +21,22 @@ clean:
 	fi
 	rm -rf .venv
 
-deploy:
-	@echo "Deploy: use local image 'instyper:latest' if present; otherwise build"
-	$(MAKE) build;
+
+deploy: build
 	@echo "Deploy step complete."
+
+
+release:
+	@echo "Creating git tag for release..."
+	@if [ ! -f VERSION ]; then \
+		echo "Error: VERSION file not found"; \
+		exit 1; \
+	fi
+	@VERSION=$$(cat VERSION | tr -d '\n'); \
+	if [ -z "$$VERSION" ]; then \
+		echo "Error: VERSION file is empty"; \
+		exit 1; \
+	fi; \
+	echo "Tagging version: v$$VERSION"; \
+	git tag -a "v$$VERSION" -m "Release v$$VERSION"; \
+	git push origin "v$$VERSION"

@@ -1,58 +1,43 @@
-# Instyper — Docker-first Voice Typing
+# Instyper — Run locally with uv
 
-Instyper runs as a desktop application but is distributed and supported to run only via Docker in this repo. It uses your host X11 server so the native GUI appears on your desktop while the app runs inside a container.
-
-This README focuses on the Docker workflow: build, run, and troubleshoot.
+Instyper runs as a desktop application and can be built and run locally using `uv`. This repository no longer supports or distributes Docker-based workflows.
 
 Quick prerequisites on the host:
 
-- Docker installed
+- A working Python 3 installation
 - A running X server (typical on Linux desktops)
 - If you want audio support, ensure `/dev/snd` exists and your user can access it
 
-- **Local build requirement (optional)**: If you plan to build or run the Python environment outside Docker, install the PortAudio development headers (so packages like `pyaudio` can compile):
+- **Build requirement (optional)**: If you plan to build packages that need PortAudio (e.g. `pyaudio`), install headers:
   - Debian/Ubuntu: `sudo apt-get install -y portaudio19-dev build-essential gcc pkg-config`
   - macOS (Homebrew): `brew install portaudio`
 
-Quick start (3 commands)
+Quick start (2 commands)
 
-1. Build the image:
+1. Prepare the project (creates / syncs a virtualenv via `uv`):
 
    - `make build`
 
-2. Allow the container to connect to your X server (one-time step):
-
-   - `xhost +local:root`  # allow local root-owned clients to connect
-
-3. Run the app:
+2. Run the app:
 
    - `make run`
 
-That's it — the app GUI should appear on your desktop.
+That's it — the app GUI should appear on your desktop when run locally.
 
 Notes and useful options
 
-- Persisted data: your models and config are stored on the host at `~/.instyper`. The container mounts this directory so models survive container restarts.
-- Global hotkey and automatic paste are disabled by default in the container (fragile with X/clipboard).
-  - To enable them (advanced / brittle), set environment variables when running the container:
-    - `-e ENABLE_GLOBAL_HOTKEY=1 -e ENABLE_AUTO_PASTE=1`
+- Persisted data: your models and config are stored on the host at `~/.instyper`.
 
 Troubleshooting
 
 - No window appears:
   - Verify `DISPLAY` is set in your shell: `echo $DISPLAY`
-  - Ensure you ran `xhost +local:root` (or mount your Xauthority into the container).
-  - Check `docker run` in `Makefile` mounts `/tmp/.X11-unix` and `~/.instyper`.
 
 - Audio issues:
-  - Make sure `/dev/snd` exists and is accessible to Docker. The Makefile mounts it by default.
+  - Make sure `/dev/snd` exists and is accessible on your system.
 
 - Permissions or missing models:
   - Models and config live in `~/.instyper`. If the app complains, check that directory and its permissions.
-
-Advanced
-
-- To run with host clipboard/hotkeys enabled (not recommended), run the container with `-e ENABLE_GLOBAL_HOTKEY=1 -e ENABLE_AUTO_PASTE=1` and ensure XAUTH or `xhost` allows access.
 
 Help
 
