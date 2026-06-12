@@ -596,15 +596,15 @@ class WhisperModelDownloader(ModelDownloader):
         model_name = self.model_info
         if not os.path.isdir(self.models_dir):
             return False
-        files = os.listdir(self.models_dir)
-        return any(f.startswith(model_name) for f in files)
+        marker = f"models--Systran--faster-whisper-{model_name}"
+        return os.path.isdir(os.path.join(self.models_dir, marker))
     def download(self) -> None:
         def download_thread():
             try:
-                import whisper
+                from faster_whisper import WhisperModel
                 model_name = self.model_info
                 self._notify_progress(f'Downloading {model_name}...')
-                whisper.load_model(model_name, download_root=self.models_dir)
+                WhisperModel(model_name, download_root=self.models_dir)
                 self._notify_progress(f'Model {model_name} ready!')
                 if self.on_done:
                     self.on_done()
@@ -1269,31 +1269,21 @@ class WhisperBackend(SpeechRecognitionBackend):
     
     def _load_model(self) -> None:
         try:
-            import whisper
+            from faster_whisper import WhisperModel
             import gc
-            import torch
         except ImportError:
-            log("Whisper not installed. Please run `python -m pip install openai-whisper`", 'error')
+            log("faster-whisper not installed. Please run `pip install faster-whisper`", 'error')
             return
 
         try:
-            # Unload previous model if it exists
             if self.model is not None:
                 del self.model
                 gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
                 self.model = None
 
             model_name = self.config.get('model', 'base')
-            self.model = whisper.load_model(model_name, download_root=self.models_dir)
+            self.model = WhisperModel(model_name, download_root=self.models_dir)
             log(f"Loaded Whisper model: {model_name}")
-        except ModuleNotFoundError as e:
-            if 'torch' in str(e):
-                log("PyTorch is required for Whisper. Please run `python -m pip install torch`", 'error')
-            else:
-                log(f"Error loading Whisper model: {e}", 'error')
-            self.model = None
         except Exception as e:
             log(f"Error loading Whisper model: {e}", 'error')
             self.model = None
@@ -1402,8 +1392,8 @@ class WhisperBackend(SpeechRecognitionBackend):
                 # On any unexpected error in verification, proceed (fail-open)
                 pass
 
-            result = self.model.transcribe(wav_path, language=lang)
-            text = result.get('text', '').strip()
+            segments, _info = self.model.transcribe(wav_path, language=lang)
+            text = " ".join(seg.text for seg in segments).strip()
             
             # Clean up temp file
             try:
@@ -3179,8 +3169,8 @@ def celery_load_speech_model(backend, model_name, models_dir):
             model = Model(model_path)
             return {'status': 'ok', 'model_path': model_path}
         elif backend == 'whisper':
-            import whisper
-            model = whisper.load_model(model_name, download_root=models_dir)
+            from faster_whisper import WhisperModel
+            WhisperModel(model_name, download_root=models_dir)
             return {'status': 'ok', 'model_name': model_name}
         # Add other backends as needed
         return {'error': f'Backend {backend} not supported'}

@@ -33,7 +33,7 @@ dependencies = [
     "stt",
     "paddlespeech; platform_system == 'Linux'",
     "numpy<2.0.0",
-    "openai-whisper==20240930",
+    "faster-whisper>=1.0.0",
     "cryptography",
     "celery",
     "joblib",
@@ -56,9 +56,6 @@ required-environments = [
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
-
-[tool.uv.extra-build-dependencies]
-openai-whisper = ["setuptools<81"]
 
 [dependency-groups]
 dev = [
