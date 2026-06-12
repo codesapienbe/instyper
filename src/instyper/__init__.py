@@ -17,6 +17,26 @@ License: MIT
 
 import os
 import sys
+
+# python-build-standalone (used by uv) hardcodes a build-time Tcl/Tk path that
+# doesn't exist on user machines. Point tkinter at the libraries shipped inside
+# the interpreter before tkinter is imported anywhere.
+def _fix_tcl_tk_paths() -> None:
+    if os.environ.get('TCL_LIBRARY') and os.environ.get('TK_LIBRARY'):
+        return
+    import glob
+    for prefix in (sys.base_prefix, sys.prefix):
+        tcl_matches = sorted(glob.glob(os.path.join(prefix, 'lib', 'tcl8.*')))
+        tk_matches = sorted(glob.glob(os.path.join(prefix, 'lib', 'tk8.*')))
+        tcl_dir = next((p for p in tcl_matches if os.path.isfile(os.path.join(p, 'init.tcl'))), None)
+        tk_dir = next((p for p in tk_matches if os.path.isfile(os.path.join(p, 'tk.tcl'))), None)
+        if tcl_dir and tk_dir:
+            os.environ.setdefault('TCL_LIBRARY', tcl_dir)
+            os.environ.setdefault('TK_LIBRARY', tk_dir)
+            return
+
+_fix_tcl_tk_paths()
+
 import time
 import threading
 import platform
@@ -60,7 +80,11 @@ import pyperclip
 import pyttsx3
 import numpy as np
 from plyer import notification
-from vosk import Model, KaldiRecognizer
+try:
+    from vosk import Model, KaldiRecognizer
+except ImportError:
+    Model = None
+    KaldiRecognizer = None
 
 # Third-party imports - UI components
 import pystray
