@@ -1,6 +1,33 @@
-# Instyper — Run locally with uv
+# Instyper
 
-Instyper runs as a desktop application and can be built and run locally using `uv`. This repository no longer supports or distributes Docker-based workflows.
+Instyper is a cross-platform desktop voice-typing application.
+
+## Install with `uv`
+
+Instyper is distributed directly from this Git repository — install it with [`uv`](https://docs.astral.sh/uv/):
+
+```sh
+# One-off run (downloads, installs into a temporary env, runs):
+uvx --python 3.10 --from git+https://github.com/codesapienbe/instyper@v2026.06.12 instyper
+
+# Permanent install (then just run `instyper`):
+uv tool install --python 3.10 --from git+https://github.com/codesapienbe/instyper@v2026.06.12 instyper
+instyper
+```
+
+Replace `v2026.06.12` with the tag you want, or use `main` for the latest. The `--python 3.10` flag is required because some dependencies (e.g. `stt`) don't ship wheels for newer Python versions; uv will download a managed CPython 3.10 if you don't have one.
+
+Don't have `uv`? Install it first:
+
+```sh
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+## Run from source (for development)
 
 Quick prerequisites on the host:
 
