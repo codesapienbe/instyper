@@ -65,21 +65,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aistudio-sdk"
-version = "0.2.6"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "bce-python-sdk", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "click", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "prettytable", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "requests", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "tqdm", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/42/91710e92151d9196bc8879d67a360527772c9bc9a7a5547449c0461e15af/aistudio_sdk-0.2.6-py3-none-any.whl", hash = "sha256:03367f38ec1c09420b7af3fe07484077386429f750f57d1a9e14d9cf94f29f51", size = 34374, upload-time = "2024-08-05T10:59:51.476Z" },
-]
-
-[[package]]
 name = "amqp"
 version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1575,33 +1560,6 @@ wheels = [
 ]
 
 [[package]]
-name = "onnx"
-version = "1.18.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "protobuf", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "typing-extensions", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/3d/60/e56e8ec44ed34006e6d4a73c92a04d9eea6163cc12440e35045aec069175/onnx-1.18.0.tar.gz", hash = "sha256:3d8dbf9e996629131ba3aa1afd1d8239b660d1f830c6688dd7e03157cccd6b9c", size = 12563009, upload-time = "2025-05-12T22:03:09.626Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/04/5b/3cfd183961a0a872fe29c95f8d07264890ec65c75c94b99a4dabc950df29/onnx-1.18.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e189652dad6e70a0465035c55cc565c27aa38803dd4f4e74e4b952ee1c2de94b", size = 17422721, upload-time = "2025-05-12T22:01:52.841Z" },
-    { url = "https://files.pythonhosted.org/packages/58/52/fa649429016c5790f68c614cdebfbefd3e72ba1c458966305297d540f713/onnx-1.18.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bfb1f271b1523b29f324bfd223f6a4cfbdc5a2f2f16e73563671932d33663365", size = 17584220, upload-time = "2025-05-12T22:01:56.458Z" },
-]
-
-[[package]]
-name = "onnxoptimizer"
-version = "0.3.13"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "onnx", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/68/bd/e8671229c2f1f99eb02961cac51e55ca64dbbe0d62791b6743cc8b9950b1/onnxoptimizer-0.3.13.tar.gz", hash = "sha256:e08b726e0d4577e51e529f36bc324bf11b7cff12852cf3eee081f05c8b8c6f33", size = 18466575, upload-time = "2023-04-19T14:51:52.511Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/0c/1769400bafbc3797fe725fa29d66256a7944101d65590ebdaf867d3b81f3/onnxoptimizer-0.3.13-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:98716324135ac5505529423dbba5479273e6f46a0f895ac611a29ed8a6f79690", size = 678124, upload-time = "2023-04-19T14:51:25.562Z" },
-]
-
-[[package]]
 name = "onnxruntime"
 version = "1.22.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1662,16 +1620,11 @@ wheels = [
 
 [[package]]
 name = "paddle2onnx"
-version = "2.0.1"
+version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "onnx", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "onnxoptimizer", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "polygraphy", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/5d/5d55b818542b22b10d9726a0fa9d57bf5d626396532ff65c3a3dae99b09c/paddle2onnx-2.0.1-cp310-cp310-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:75423da469d299c06e1cce10500f2bad9155fd7bf72d42741f95160ebc321b37", size = 3261612, upload-time = "2025-04-18T09:22:04.744Z" },
-    { url = "https://files.pythonhosted.org/packages/e1/60/0935cafbfd9d2f1bbfae2ccb9799a10656e141591e0270e45c532b3081a7/paddle2onnx-2.0.1-cp310-cp310-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:996ff9ce2940580d89530a4c4a34a7b223d083905c2bc7022a1d1a55ac27d891", size = 3662334, upload-time = "2025-04-18T06:29:01.876Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/6d/770e0580e21f4f77961483e3cd2c73ded5030cc9c851ff40c082c0ac2eb0/paddle2onnx-1.3.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4d27d2b673d999a13678f6d79aa600c116823a33761261daa9eaa8566ad9be63", size = 3410598, upload-time = "2024-11-28T14:01:12.338Z" },
+    { url = "https://files.pythonhosted.org/packages/46/8e/16be8f3061868adedbcc28185c3dd5b4f72463ddddefe0e92d08b15c897e/paddle2onnx-1.3.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:26cbefbdd8b041065db01ba93e4a14e0b089c7cb5307df7bc4fb9f8e932ca57a", size = 3619141, upload-time = "2024-11-28T12:50:39.917Z" },
 ]
 
 [[package]]
@@ -1690,10 +1643,9 @@ wheels = [
 
 [[package]]
 name = "paddlenlp"
-version = "2.8.1"
+version = "2.5.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aistudio-sdk", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "colorama", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "colorlog", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "datasets", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
@@ -1702,26 +1654,20 @@ dependencies = [
     { name = "flask-babel", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "huggingface-hub", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "jieba", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "jinja2", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "multiprocess", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "onnx", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "paddle2onnx", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "paddlefsl", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "protobuf", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "regex", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "rich", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "safetensors", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "sentencepiece", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "seqeval", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
-    { name = "tool-helpers", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "tqdm", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "typer", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "uvicorn", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "visualdl", marker = "(platform_machine != 'arm64' and sys_platform == 'darwin') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3e/50/8b5fc5a50cfdbc72cd98b8612436294b9eb435fd74e28e6289cf9996fa7e/paddlenlp-2.8.1.tar.gz", hash = "sha256:dda5f07255c6e6658e5adabcfc8fcf4730e2770dab166a6516173689fccc686d", size = 2331412, upload-time = "2024-06-20T07:45:58.168Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/30/204ab2e0e01222060db5684041d5c4a73dec0adb622e3397f88d15b38f94/paddlenlp-2.5.2.tar.gz", hash = "sha256:256f1b4b9dd2637e107ffa2de12198fdc64473926cb10f3d31aa46b58d7106a8", size = 1795027, upload-time = "2023-03-07T08:32:59.354Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/62/98dd0ca2f6600ca1dfc9c59ba1b40628df5f7948abc85ba16c3367c49cf4/paddlenlp-2.8.1-py3-none-any.whl", hash = "sha256:8cb5324ee5c39d29264ec5049ea5a6beeebb04a625b5a5c519b92475ea7d067f", size = 2936012, upload-time = "2024-06-20T07:45:55.212Z" },
+    { url = "https://files.pythonhosted.org/packages/e4/67/f97788181e3a49afcdf8ffa162a335c21d18a55387bae85be24b01383165/paddlenlp-2.5.2-py3-none-any.whl", hash = "sha256:c2d2c63fbcf9db2150b3fabe3638d9a016d85deff003ade07781e95263bc7af4", size = 2264520, upload-time = "2023-03-07T08:32:56.479Z" },
 ]
 
 [[package]]
@@ -1933,14 +1879,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/9c/f0/71d37470d2ac6768ed1d6a98cabf38fb1253e46dd6b2c747237e8bb6af82/pocketsphinx-5.0.4-pp310-pypy310_pp73-macosx_11_0_arm64.whl", hash = "sha256:09f2c7922b8673b9b41be63a813c679ceead4bd760e4e4654cb1ec0529e51e97", size = 29057614, upload-time = "2025-01-10T17:00:54.552Z" },
     { url = "https://files.pythonhosted.org/packages/b3/cd/32932aa3e1927e001c04f6cb17e38eb850cebd160a5b44c40869414e5f71/pocketsphinx-5.0.4-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:aea292504f21ff243c52221710176842417b5bad5728d47a666f955f21f28024", size = 29162169, upload-time = "2025-01-10T17:01:18.76Z" },
     { url = "https://files.pythonhosted.org/packages/02/4a/0f5e44b3c4c4536c8ff3e4556b3366da3492c08fda43c30bc0d13ca9927e/pocketsphinx-5.0.4-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:ef3bb0f69a7fdbce46f6d815ed025ae4860b38d5f9c610e512201dff19f4ce53", size = 29059283, upload-time = "2025-01-10T17:01:41.901Z" },
-]
-
-[[package]]
-name = "polygraphy"
-version = "0.49.22"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/2e/8b2b42988a90a7812c73a2573b7a356c2b08d824021ac282f2ca9c1cb0f0/polygraphy-0.49.22-py2.py3-none-any.whl", hash = "sha256:084fc57389f070f11e785a78dabbf2f4af2e2a16499d441b4483e880b426b42f", size = 361070, upload-time = "2025-05-12T17:51:37.977Z" },
 ]
 
 [[package]]
