@@ -1918,22 +1918,12 @@ wheels = [
 
 [[package]]
 name = "pocketsphinx"
-version = "5.0.4"
+version = "5.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "sounddevice" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ce/89/23e37c19bf30f0570088b7c4b548a666ca94331a6aa5a59b34402becc2d5/pocketsphinx-5.0.4.tar.gz", hash = "sha256:17d2971e998490def9554b6ba41886708422af5b4ae888723b1b077aab0fe8d4", size = 34135858, upload-time = "2025-01-10T17:02:09.116Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/63/90d0ebc82743fc9e14b6ec5fc1c6c11189b4fe305b6049eb5a5625cdb1ee/pocketsphinx-5.0.4-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:46d55f8e39e4efd7a9510b4e3f04fff1f584d01feaf1eb916a6c0f1a1d9fc08e", size = 29545625, upload-time = "2025-01-10T16:52:29.648Z" },
-    { url = "https://files.pythonhosted.org/packages/15/32/eb08a9e433aacb727f2b51da33f9c1612c6279fb7c2716ea28163412a2ba/pocketsphinx-5.0.4-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1252b6ba31fb1404aa10d182d9b2685a3cac1753729390c8ec2dde0a882d88b9", size = 29180895, upload-time = "2025-01-10T16:52:54.28Z" },
-    { url = "https://files.pythonhosted.org/packages/48/58/aa8b8150528a1d8d0a6374d4bb553f85a9d4c239c566c8d036d57697a85d/pocketsphinx-5.0.4-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:3af489151b2bdd910fe279fd6abdc7e53936c6b140a4bae743478cc3419a4cda", size = 29197863, upload-time = "2025-01-10T16:53:18.922Z" },
-    { url = "https://files.pythonhosted.org/packages/31/06/01e49eb93696f03d2d6e27a0fa0dfdef0cc1508d8036cdcf7137d67ea56d/pocketsphinx-5.0.4-cp310-cp310-win_amd64.whl", hash = "sha256:3dbbca377ca081c1afeb87dac8d17e41e17dcb89ff04041edb03a73b42e53bbd", size = 29060539, upload-time = "2025-01-10T16:53:42.559Z" },
-    { url = "https://files.pythonhosted.org/packages/af/ab/e4e59030b835180e88497e50df287ef5fd2d1ebf09f36487bdf7f61476bf/pocketsphinx-5.0.4-pp310-pypy310_pp73-macosx_10_15_x86_64.whl", hash = "sha256:c20e62f37d92a1447ceb8cd217811a2a4f86abb34748b44cad8b9c1dadce6ba3", size = 29096852, upload-time = "2025-01-10T17:00:31.886Z" },
-    { url = "https://files.pythonhosted.org/packages/9c/f0/71d37470d2ac6768ed1d6a98cabf38fb1253e46dd6b2c747237e8bb6af82/pocketsphinx-5.0.4-pp310-pypy310_pp73-macosx_11_0_arm64.whl", hash = "sha256:09f2c7922b8673b9b41be63a813c679ceead4bd760e4e4654cb1ec0529e51e97", size = 29057614, upload-time = "2025-01-10T17:00:54.552Z" },
-    { url = "https://files.pythonhosted.org/packages/b3/cd/32932aa3e1927e001c04f6cb17e38eb850cebd160a5b44c40869414e5f71/pocketsphinx-5.0.4-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:aea292504f21ff243c52221710176842417b5bad5728d47a666f955f21f28024", size = 29162169, upload-time = "2025-01-10T17:01:18.76Z" },
-    { url = "https://files.pythonhosted.org/packages/02/4a/0f5e44b3c4c4536c8ff3e4556b3366da3492c08fda43c30bc0d13ca9927e/pocketsphinx-5.0.4-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:ef3bb0f69a7fdbce46f6d815ed025ae4860b38d5f9c610e512201dff19f4ce53", size = 29059283, upload-time = "2025-01-10T17:01:41.901Z" },
-]
+sdist = { url = "https://files.pythonhosted.org/packages/61/e7/13e0e787ff467218de880310d79cba14424f13b87171ac44af0bde1e428c/pocketsphinx-5.1.1.tar.gz", hash = "sha256:675778b309a22dfc9b7d37f7621976bba491d2a5f8c59696bd77fd6d07271355", size = 34158862, upload-time = "2026-06-06T17:33:13.04Z" }
 
 [[package]]
 name = "polygraphy"
